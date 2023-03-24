@@ -1,10 +1,9 @@
 [package]
 name = "async-curl"
+authors = ["Lorenzo Leonardo <enzotechcomputersolutions@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-curl = "0.4.44"
+curl = { version = "0.4.44", features = ["default"] }
 tokio = { version = "1.20", features = ["rt", "test-util", "macros", "time"] }
