@@ -1,0 +1,10 @@
+[package]
+name = "async-curl"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+curl = "0.4.44"
+tokio = { version = "1.20", features = ["rt", "test-util", "macros", "time"] }
