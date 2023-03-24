@@ -1,2 +1,2 @@
 # async-curl
-This will perform Curl Easy2 asynchronously for Rust
+This will perform curl Easy2 asynchronously for rust-lang using curl::multi and tokio
