@@ -35,7 +35,7 @@ mod test {
     async fn test_send_request() {
         let curl = AsyncCurl::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
-        easy2.url("https://www.google.com").unwrap();
+        easy2.url("https://www.rust-lang.org").unwrap();
         easy2.get(true).unwrap();
 
         let spawn1 = tokio::spawn(async move {
@@ -49,7 +49,7 @@ mod test {
 
         let curl = AsyncCurl::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
-        easy2.url("https://www.google.com").unwrap();
+        easy2.url("https://www.rust-lang.org").unwrap();
         easy2.get(true).unwrap();
 
         let spawn2 = tokio::spawn(async move {
