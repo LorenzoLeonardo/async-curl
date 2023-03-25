@@ -7,3 +7,7 @@ edition = "2021"
 [dependencies]
 curl = { version = "0.4.44", features = ["default"] }
 tokio = { version = "1.20", features = ["rt", "test-util", "macros", "time"] }
+http = "0.2"
+
+[dev-dependencies]
+wiremock = "0.5.17"

@@ -33,6 +33,15 @@ where
     sender: Sender<Request<H>>,
 }
 
+impl<H> Default for AsyncCurl<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<H> AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
@@ -79,37 +88,86 @@ pub async fn perform_curl_multi<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>,
 #[cfg(test)]
 mod test {
 
+    use http::StatusCode;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+
     use crate::async_curl::AsyncCurl;
     use crate::async_curl::Easy2;
     use crate::response_handler::ResponseHandler;
 
+    async fn start_mock_server(
+        node: &str,
+        mock_body: String,
+        mock_status_code: StatusCode,
+    ) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(node))
+            .respond_with(ResponseTemplate::new(mock_status_code).set_body_string(mock_body))
+            .mount(&server)
+            .await;
+        server
+    }
+
     #[tokio::test]
-    async fn test_send_request() {
+    async fn test_async_requests() {
+        const PATH: &str = "/test";
+        const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+        const MOCK_STATUS_CODE: StatusCode = StatusCode::OK;
+
+        let server = start_mock_server(
+            "/async-test",
+            MOCK_BODY_RESPONSE.to_string(),
+            StatusCode::OK,
+        )
+        .await;
+        let url = format!("{}{}", server.uri(), "/async-test");
+
         let curl = AsyncCurl::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
-        easy2.url("https://www.rust-lang.org").unwrap();
+        easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
 
         let spawn1 = tokio::spawn(async move {
             let result = curl.send_request(easy2).await;
-            let result = result.unwrap();
-            eprintln!(
-                "{:?}",
-                String::from_utf8_lossy(&result.get_ref().to_owned().get_data())
+            let mut result = result.unwrap();
+            // Test response body
+            assert_eq!(
+                String::from_utf8_lossy(&result.get_ref().to_owned().get_data()),
+                MOCK_BODY_RESPONSE.to_string()
+            );
+
+            // Test response status code
+            let status_code = result.response_code().unwrap();
+            assert_eq!(
+                StatusCode::from_u16(status_code.try_into().unwrap()).unwrap(),
+                MOCK_STATUS_CODE
             );
         });
 
         let curl = AsyncCurl::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
-        easy2.url("https://www.rust-lang.org").unwrap();
+        easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
 
         let spawn2 = tokio::spawn(async move {
             let result = curl.send_request(easy2).await;
-            let result = result.unwrap();
-            eprintln!(
-                "{:?}",
-                String::from_utf8_lossy(&result.get_ref().to_owned().get_data())
+            let mut result = result.unwrap();
+            // Test response body
+            assert_eq!(
+                String::from_utf8_lossy(&result.get_ref().to_owned().get_data()),
+                MOCK_BODY_RESPONSE.to_string()
+            );
+
+            // Test response status code
+            let status_code = result.response_code().unwrap();
+            assert_eq!(
+                StatusCode::from_u16(status_code.try_into().unwrap()).unwrap(),
+                MOCK_STATUS_CODE
             );
         });
 
