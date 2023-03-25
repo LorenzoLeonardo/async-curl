@@ -1,9 +1,10 @@
 use curl::easy::{Easy2, Handler};
 use curl::multi::Multi;
-use curl::MultiError;
 use std::fmt::Debug;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
+
+use crate::async_curl_error::AsyncCurlError;
 /// AsyncCurl is responsible for performing
 /// the contructed Easy2 object by passing
 /// it into send_request
@@ -51,30 +52,32 @@ where
         tokio::spawn(async move {
             while let Some(res) = rx.recv().await {
                 let response = perform_curl_multi(res.0).await;
-                res.1.send(response).unwrap()
+                if let Err(res) = res.1.send(response) {
+                    eprintln!("Warning! The receiver has been dropped. {:?}", res);
+                }
             }
         });
 
         Self { sender: tx }
     }
 
-    pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, MultiError>
+    pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError>
     where
         H: Handler + Debug + Send + 'static,
     {
-        let (tx, rx) = oneshot::channel::<Result<Easy2<H>, MultiError>>();
-        self.sender.send(Request(easy2, tx)).await.unwrap();
-        rx.await.unwrap()
+        let (tx, rx) = oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
+        self.sender.send(Request(easy2, tx)).await?;
+        rx.await?
     }
 }
 
 #[derive(Debug)]
-struct Request<H: Handler + Debug + Send + 'static>(
+pub(crate) struct Request<H: Handler + Debug + Send + 'static>(
     Easy2<H>,
-    oneshot::Sender<Result<Easy2<H>, MultiError>>,
+    oneshot::Sender<Result<Easy2<H>, AsyncCurlError>>,
 );
 
-pub async fn perform_curl_multi<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, MultiError> {
+pub async fn perform_curl_multi<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
     let multi = Multi::new();
     let handle = multi.add2(easy2)?;
 
@@ -82,7 +85,7 @@ pub async fn perform_curl_multi<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>,
         multi.wait(&mut [], std::time::Duration::from_secs(1))?;
     }
 
-    multi.remove2(handle)
+    multi.remove2(handle).map_err(AsyncCurlError::from)
 }
 
 #[cfg(test)]
