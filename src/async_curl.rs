@@ -31,7 +31,7 @@ pub struct AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
 {
-    sender: Sender<Request<H>>,
+    request_sender: Sender<Request<H>>,
 }
 
 impl<H> Default for AsyncCurl<H>
@@ -48,26 +48,29 @@ where
     H: Handler + Debug + Send + 'static,
 {
     pub fn new() -> Self {
-        let (tx, mut rx) = mpsc::channel::<Request<H>>(1);
+        let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         tokio::spawn(async move {
-            while let Some(res) = rx.recv().await {
-                let response = perform_curl_multi(res.0).await;
-                if let Err(res) = res.1.send(response) {
+            while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
+                let response = perform_curl_multi(easy2).await;
+                if let Err(res) = oneshot_sender.send(response) {
                     eprintln!("Warning! The receiver has been dropped. {:?}", res);
                 }
             }
         });
 
-        Self { sender: tx }
+        Self { request_sender }
     }
 
     pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError>
     where
         H: Handler + Debug + Send + 'static,
     {
-        let (tx, rx) = oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
-        self.sender.send(Request(easy2, tx)).await?;
-        rx.await?
+        let (oneshot_sender, oneshot_receiver) =
+            oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
+        self.request_sender
+            .send(Request(easy2, oneshot_sender))
+            .await?;
+        oneshot_receiver.await?
     }
 }
 
@@ -101,6 +104,7 @@ mod test {
     use crate::async_curl::AsyncCurl;
     use crate::async_curl::Easy2;
     use crate::response_handler::ResponseHandler;
+    use std::convert::TryFrom;
 
     async fn start_mock_server(
         node: &str,
@@ -146,8 +150,9 @@ mod test {
 
             // Test response status code
             let status_code = result.response_code().unwrap();
+
             assert_eq!(
-                StatusCode::from_u16(status_code.try_into().unwrap()).unwrap(),
+                StatusCode::from_u16(u16::try_from(status_code).unwrap()).unwrap(),
                 MOCK_STATUS_CODE
             );
         });
@@ -169,7 +174,7 @@ mod test {
             // Test response status code
             let status_code = result.response_code().unwrap();
             assert_eq!(
-                StatusCode::from_u16(status_code.try_into().unwrap()).unwrap(),
+                StatusCode::from_u16(u16::try_from(status_code).unwrap()).unwrap(),
                 MOCK_STATUS_CODE
             );
         });
