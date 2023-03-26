@@ -19,6 +19,8 @@ pub struct ResponseHandler {
 }
 
 impl Handler for ResponseHandler {
+    /// This will store the response from the server
+    /// to the data vector.
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
         self.data.extend_from_slice(data);
         Ok(data.len())
@@ -26,10 +28,14 @@ impl Handler for ResponseHandler {
 }
 
 impl ResponseHandler {
+    /// Instantiation of the ResponseHandler
+    /// and initialize the data vector.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// This will consumed the object and
+    /// give the data to the caller
     pub fn get_data(self) -> Vec<u8> {
         self.data
     }

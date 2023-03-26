@@ -27,6 +27,59 @@ use crate::async_curl_error::AsyncCurlError;
 /// Ok(())
 /// # }
 /// ```
+///
+/// Example for multiple request executed
+/// at the same time.
+///
+/// ```
+/// use async_curl::{async_curl::AsyncCurl, response_handler::ResponseHandler};
+/// use curl::easy::Easy2;
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let curl = AsyncCurl::new();
+/// let mut easy2 = Easy2::new(ResponseHandler::new());
+/// easy2.url("https://www.rust-lang.org").unwrap();
+/// easy2.get(true).unwrap();
+///
+/// let spawn1 = tokio::spawn(async move {
+///     let response = curl.send_request(easy2).await;
+///     let mut response = response.unwrap();
+///
+///     // Response body
+///     eprintln!(
+///         "Task 1 : {}",
+///         String::from_utf8_lossy(&response.get_ref().to_owned().get_data())
+///     );
+///     // Response status code
+///     let status_code = response.response_code().unwrap();
+///     eprintln!("Task 1 : {}", status_code);
+/// });
+///
+/// let curl = AsyncCurl::new();
+/// let mut easy2 = Easy2::new(ResponseHandler::new());
+/// easy2.url("https://www.rust-lang.org").unwrap();
+/// easy2.get(true).unwrap();
+///
+/// let spawn2 = tokio::spawn(async move {
+///     let response = curl.send_request(easy2).await;
+///     let mut response = response.unwrap();
+///
+///     // Response body
+///     eprintln!(
+///         "Task 2 : {}",
+///         String::from_utf8_lossy(&response.get_ref().to_owned().get_data())
+///     );
+///     // Response status code
+///     let status_code = response.response_code().unwrap();
+///     eprintln!("Task 2 : {}", status_code);
+/// });
+/// let (_, _) = tokio::join!(spawn1, spawn2);
+///
+/// Ok(())
+/// # }
+/// ```
+///
 pub struct AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
@@ -47,6 +100,10 @@ impl<H> AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
 {
+    /// This creates the new instance of AsyncCurl.
+    /// This spawns a new asynchronous task using tokio
+    /// so that it won't block. The perform_curl_multi
+    /// function is executed when send_request is called
     pub fn new() -> Self {
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         tokio::spawn(async move {
@@ -61,6 +118,10 @@ where
         Self { request_sender }
     }
 
+    /// This will trigger the request_reciever channel
+    /// at the spawned asynchronous task to call
+    /// perform_curl_multi to start communicating with
+    /// the target server.
     pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError>
     where
         H: Handler + Debug + Send + 'static,
@@ -80,6 +141,8 @@ pub(crate) struct Request<H: Handler + Debug + Send + 'static>(
     oneshot::Sender<Result<Easy2<H>, AsyncCurlError>>,
 );
 
+/// This will perform the sending of the built Easy2
+/// request to the target server.
 pub async fn perform_curl_multi<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
     let multi = Multi::new();
     let handle = multi.add2(easy2)?;
