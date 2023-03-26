@@ -31,7 +31,7 @@ pub struct AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
 {
-    sender: Sender<Request<H>>,
+    request_sender: Sender<Request<H>>,
 }
 
 impl<H> Default for AsyncCurl<H>
@@ -48,26 +48,29 @@ where
     H: Handler + Debug + Send + 'static,
 {
     pub fn new() -> Self {
-        let (tx, mut rx) = mpsc::channel::<Request<H>>(1);
+        let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         tokio::spawn(async move {
-            while let Some(res) = rx.recv().await {
-                let response = perform_curl_multi(res.0).await;
-                if let Err(res) = res.1.send(response) {
+            while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
+                let response = perform_curl_multi(easy2).await;
+                if let Err(res) = oneshot_sender.send(response) {
                     eprintln!("Warning! The receiver has been dropped. {:?}", res);
                 }
             }
         });
 
-        Self { sender: tx }
+        Self { request_sender }
     }
 
     pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError>
     where
         H: Handler + Debug + Send + 'static,
     {
-        let (tx, rx) = oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
-        self.sender.send(Request(easy2, tx)).await?;
-        rx.await?
+        let (oneshot_sender, oneshot_receiver) =
+            oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
+        self.request_sender
+            .send(Request(easy2, oneshot_sender))
+            .await?;
+        oneshot_receiver.await?
     }
 }
 
