@@ -1,8 +1,10 @@
-use curl::{easy::Handler, MultiError};
-use std::fmt::Debug;
-use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
-
 use crate::async_curl;
+use curl::{easy::Handler, MultiError};
+use std::{
+    error,
+    fmt::{self, Debug},
+};
+use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 
 #[derive(Debug)]
 pub struct AsyncCurlError(pub String);
@@ -36,3 +38,11 @@ where
         AsyncCurlError(format!("{:?}", err))
     }
 }
+
+impl fmt::Display for AsyncCurlError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl error::Error for AsyncCurlError {}
