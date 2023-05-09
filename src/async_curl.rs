@@ -185,7 +185,6 @@ mod test {
 
     #[tokio::test]
     async fn test_async_requests() {
-        const PATH: &str = "/test";
         const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
         const MOCK_STATUS_CODE: StatusCode = StatusCode::OK;
 
