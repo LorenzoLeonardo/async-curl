@@ -39,6 +39,12 @@ where
     }
 }
 
+impl From<curl::Error> for AsyncCurlError {
+    fn from(err: curl::Error) -> Self {
+        AsyncCurlError(format!("{:?}", err))
+    }
+}
+
 impl fmt::Display for AsyncCurlError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
