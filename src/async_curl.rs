@@ -81,6 +81,7 @@ use crate::async_curl_error::AsyncCurlError;
 /// # }
 /// ```
 ///
+#[derive(Clone)]
 pub struct AsyncCurl<H>
 where
     H: Handler + Debug + Send + 'static,
