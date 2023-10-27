@@ -110,9 +110,15 @@ where
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         tokio::spawn(async move {
             while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
-                let response = perform_curl(easy2).await;
-                if let Err(res) = oneshot_sender.send(response) {
-                    eprintln!("Warning! The receiver has been dropped. {:?}", res);
+                if let Err(err) = tokio::task::spawn_blocking(move || {
+                    let response = perform_curl(easy2);
+                    if let Err(res) = oneshot_sender.send(response) {
+                        eprintln!("Warning! The receiver has been dropped. {:?}", res);
+                    }
+                })
+                .await
+                {
+                    eprintln!("Error! Join Error. {:?}", err);
                 }
             }
         });
@@ -146,7 +152,7 @@ pub(crate) struct Request<H: Handler + Debug + Send + 'static>(
 /// This will perform the sending of the built Easy2
 /// request to the target server.
 #[cfg(feature = "multi")]
-pub async fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
+fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
     let multi = Multi::new();
     let handle = multi.add2(easy2)?;
 
@@ -159,7 +165,7 @@ pub async fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, Async
 /// This will perform the sending of the built Easy2
 /// request to the target server.
 #[cfg(not(feature = "multi"))]
-pub async fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
+fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
     let _ = easy2.perform().map_err(AsyncCurlError::from)?;
     Ok(easy2)
 }
