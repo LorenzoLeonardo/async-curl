@@ -12,6 +12,7 @@ where
     H: Handler + Debug + Send + 'static,
 {
     Curl(curl::Error),
+    Multi(curl::MultiError),
     TokioRecv(RecvError),
     TokioSend(SendError<actor::Request<H>>),
 }
@@ -59,6 +60,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::Curl(err) => write!(f, "{}", err),
+            Error::Multi(err) => write!(f, "{}", err),
             Error::TokioRecv(err) => write!(f, "{}", err),
             Error::TokioSend(err) => write!(f, "{}", err),
         }
