@@ -102,9 +102,13 @@ where
     H: Handler + Debug + Send + 'static,
 {
     /// This creates the new instance of CurlActor.
-    /// This spawns a new asynchronous task using tokio
-    /// so that it won't block. The perform_curl
-    /// function is executed when send_request is called
+    /// This spawns a new asynchronous task using tokio::spawn
+    /// and tokio::task::spawn_blocking inside tokio::spawn to perform the blocking curl perform inside.
+    ///
+    /// According to tokio documentation [here](https://docs.rs/tokio/1.28.0/tokio/index.html#cpu-bound-tasks-and-blocking-code),
+    /// blocking calls must be perform inside tokio::task::spawn_blocking otherwise block other tasks from running.
+    ///
+    /// The perform_curl function is executed when send_request is called.
     pub fn new() -> Self {
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         tokio::spawn(async move {
@@ -125,10 +129,9 @@ where
         Self { request_sender }
     }
 
-    /// This will trigger the request_reciever channel
-    /// at the spawned asynchronous task to call
-    /// perform_curl_multi to start communicating with
-    /// the target server.
+    /// This will send Easy2 into the background task that will perform
+    /// curl asynchronously, await the response in the oneshot receiver and
+    /// return Easy2 back to the caller.
     pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>
     where
         H: Handler + Debug + Send + 'static,
