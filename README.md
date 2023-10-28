@@ -4,12 +4,12 @@ This will perform curl Easy2 asynchronously for rust-lang using curl::multi and 
 ## How to use with multiple async request
 
 ```rust
-use async_curl::{async_curl::AsyncCurl, response_handler::ResponseHandler};
+use async_curl::{actor::CurlActor, response_handler::ResponseHandler};
 use curl::easy::Easy2;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let curl = AsyncCurl::new();
+    let curl = CurlActor::new();
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url("https://www.rust-lang.org").unwrap();
     easy2.get(true).unwrap();
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Task 1 : {}", status_code);
     });
 
-    let curl = AsyncCurl::new();
+    let curl = CurlActor::new();
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url("https://www.rust-lang.org").unwrap();
     easy2.get(true).unwrap();

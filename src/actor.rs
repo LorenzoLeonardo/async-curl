@@ -5,18 +5,18 @@ use std::fmt::Debug;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 
-use crate::async_curl_error::AsyncCurlError;
-/// AsyncCurl is responsible for performing
+use crate::error::Error;
+/// CurlActor is responsible for performing
 /// the contructed Easy2 object by passing
 /// it into send_request
 /// ```
 /// use curl::easy::Easy2;
 /// use async_curl::response_handler::ResponseHandler;
-/// use async_curl::async_curl::AsyncCurl;
+/// use async_curl::actor::CurlActor;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>>{
-/// let curl = AsyncCurl::new();
+/// let curl = CurlActor::new();
 /// let mut easy2 = Easy2::new(ResponseHandler::new());
 ///
 /// easy2.url("https://www.rust-lang.org").unwrap();
@@ -33,12 +33,12 @@ use crate::async_curl_error::AsyncCurlError;
 /// at the same time.
 ///
 /// ```
-/// use async_curl::{async_curl::AsyncCurl, response_handler::ResponseHandler};
+/// use async_curl::{actor::CurlActor, response_handler::ResponseHandler};
 /// use curl::easy::Easy2;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let curl = AsyncCurl::new();
+/// let curl = CurlActor::new();
 /// let mut easy2 = Easy2::new(ResponseHandler::new());
 /// easy2.url("https://www.rust-lang.org").unwrap();
 /// easy2.get(true).unwrap();
@@ -57,7 +57,7 @@ use crate::async_curl_error::AsyncCurlError;
 ///     eprintln!("Task 1 : {}", status_code);
 /// });
 ///
-/// let curl = AsyncCurl::new();
+/// let curl = CurlActor::new();
 /// let mut easy2 = Easy2::new(ResponseHandler::new());
 /// easy2.url("https://www.rust-lang.org").unwrap();
 /// easy2.get(true).unwrap();
@@ -82,14 +82,14 @@ use crate::async_curl_error::AsyncCurlError;
 /// ```
 ///
 #[derive(Clone)]
-pub struct AsyncCurl<H>
+pub struct CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
 {
     request_sender: Sender<Request<H>>,
 }
 
-impl<H> Default for AsyncCurl<H>
+impl<H> Default for CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
 {
@@ -98,13 +98,13 @@ where
     }
 }
 
-impl<H> AsyncCurl<H>
+impl<H> CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
 {
-    /// This creates the new instance of AsyncCurl.
+    /// This creates the new instance of CurlActor.
     /// This spawns a new asynchronous task using tokio
-    /// so that it won't block. The perform_curl_multi
+    /// so that it won't block. The perform_curl
     /// function is executed when send_request is called
     pub fn new() -> Self {
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
@@ -130,12 +130,11 @@ where
     /// at the spawned asynchronous task to call
     /// perform_curl_multi to start communicating with
     /// the target server.
-    pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError>
+    pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>
     where
         H: Handler + Debug + Send + 'static,
     {
-        let (oneshot_sender, oneshot_receiver) =
-            oneshot::channel::<Result<Easy2<H>, AsyncCurlError>>();
+        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
         self.request_sender
             .send(Request(easy2, oneshot_sender))
             .await?;
@@ -144,29 +143,33 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct Request<H: Handler + Debug + Send + 'static>(
+pub struct Request<H: Handler + Debug + Send + 'static>(
     Easy2<H>,
-    oneshot::Sender<Result<Easy2<H>, AsyncCurlError>>,
+    oneshot::Sender<Result<Easy2<H>, Error<H>>>,
 );
 
 /// This will perform the sending of the built Easy2
 /// request to the target server.
 #[cfg(feature = "multi")]
-fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
+fn perform_curl<H: Handler + Debug + Send + 'static>(
+    easy2: Easy2<H>,
+) -> Result<Easy2<H>, Error<H>> {
     let multi = Multi::new();
     let handle = multi.add2(easy2)?;
 
     while multi.perform()? > 0 {
         multi.wait(&mut [], std::time::Duration::from_secs(1))?;
     }
-    multi.remove2(handle).map_err(AsyncCurlError::from)
+    multi.remove2(handle).map_err(Error::from)
 }
 
 /// This will perform the sending of the built Easy2
 /// request to the target server.
 #[cfg(not(feature = "multi"))]
-fn perform_curl<H: Handler>(easy2: Easy2<H>) -> Result<Easy2<H>, AsyncCurlError> {
-    let _ = easy2.perform().map_err(AsyncCurlError::from)?;
+fn perform_curl<H: Handler + Debug + Send + 'static>(
+    easy2: Easy2<H>,
+) -> Result<Easy2<H>, Error<H>> {
+    easy2.perform().map_err(Error::from)?;
     Ok(easy2)
 }
 
@@ -180,8 +183,8 @@ mod test {
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
 
-    use crate::async_curl::AsyncCurl;
-    use crate::async_curl::Easy2;
+    use crate::actor::CurlActor;
+    use crate::actor::Easy2;
     use crate::response_handler::ResponseHandler;
     use std::convert::TryFrom;
 
@@ -213,7 +216,7 @@ mod test {
         .await;
         let url = format!("{}{}", server.uri(), "/async-test");
 
-        let curl = AsyncCurl::new();
+        let curl = CurlActor::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
@@ -236,7 +239,7 @@ mod test {
             );
         });
 
-        let curl = AsyncCurl::new();
+        let curl = CurlActor::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
@@ -275,7 +278,7 @@ mod test {
         .await;
         let url = format!("{}{}", server.uri(), "/async-test");
 
-        let curl = AsyncCurl::new();
+        let curl = CurlActor::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
@@ -298,7 +301,7 @@ mod test {
             );
         });
 
-        let curl = AsyncCurl::new();
+        let curl = CurlActor::new();
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
