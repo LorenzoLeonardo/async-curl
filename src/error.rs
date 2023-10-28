@@ -64,3 +64,19 @@ where
         Error::Curl(err)
     }
 }
+
+impl<H> std::fmt::Display for Error<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Error::Curl(err) => write!(f, "{}", err),
+            Error::Multi(err) => write!(f, "{}", err),
+            Error::TokioRecv(err) => write!(f, "{}", err),
+            Error::TokioSend(err) => write!(f, "{}", err),
+        }
+    }
+}
+
+impl<H> std::error::Error for Error<H> where H: Handler + Debug + Send + 'static {}
