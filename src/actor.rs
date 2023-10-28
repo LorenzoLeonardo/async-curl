@@ -1,7 +1,12 @@
+use std::fmt::Debug;
+#[cfg(feature = "multi")]
+use std::thread::sleep;
+#[cfg(feature = "multi")]
+use std::time::Duration;
+
 use curl::easy::{Easy2, Handler};
 #[cfg(feature = "multi")]
 use curl::multi::Multi;
-use std::fmt::Debug;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 
@@ -157,8 +162,24 @@ fn perform_curl<H: Handler + Debug + Send + 'static>(
     let multi = Multi::new();
     let handle = multi.add2(easy2)?;
 
-    while multi.perform()? > 0 {
-        multi.wait(&mut [], std::time::Duration::from_secs(1))?;
+    while multi.perform()? != 0 {
+        let timeout_result = multi
+            .get_timeout()
+            .map(|d| d.unwrap_or_else(|| Duration::from_secs(2)));
+
+        let timeout = match timeout_result {
+            Ok(duration) => duration,
+            Err(multi_error) => {
+                if !multi_error.is_call_perform() {
+                    return Err(Error::from(multi_error));
+                }
+                Duration::ZERO
+            }
+        };
+
+        if !timeout.is_zero() {
+            sleep(Duration::from_millis(200));
+        }
     }
     multi.remove2(handle).map_err(Error::from)
 }
