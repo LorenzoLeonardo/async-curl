@@ -6,8 +6,8 @@ use tokio::sync::oneshot;
 
 use crate::error::Error;
 /// CurlActor is responsible for performing
-/// the contructed Easy2 object by passing
-/// it into send_request
+/// the contructed Easy2 object at the background
+/// to perform it asynchronously.
 /// ```
 /// use curl::easy::Easy2;
 /// use async_curl::response_handler::ResponseHandler;
@@ -37,13 +37,14 @@ use crate::error::Error;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let curl = CurlActor::new();
+/// let actor = CurlActor::new();
 /// let mut easy2 = Easy2::new(ResponseHandler::new());
 /// easy2.url("https://www.rust-lang.org").unwrap();
 /// easy2.get(true).unwrap();
 ///
+/// let actor1 = actor.clone();
 /// let spawn1 = tokio::spawn(async move {
-///     let response = curl.send_request(easy2).await;
+///     let response = actor1.send_request(easy2).await;
 ///     let mut response = response.unwrap();
 ///
 ///     // Response body
@@ -56,13 +57,12 @@ use crate::error::Error;
 ///     eprintln!("Task 1 : {}", status_code);
 /// });
 ///
-/// let curl = CurlActor::new();
 /// let mut easy2 = Easy2::new(ResponseHandler::new());
 /// easy2.url("https://www.rust-lang.org").unwrap();
 /// easy2.get(true).unwrap();
 ///
 /// let spawn2 = tokio::spawn(async move {
-///     let response = curl.send_request(easy2).await;
+///     let response = actor.send_request(easy2).await;
 ///     let mut response = response.unwrap();
 ///
 ///     // Response body
@@ -144,6 +144,8 @@ where
     }
 }
 
+/// This contains the Easy2 object and a oneshot sender channel when passing into the
+/// background task to perform Curl asynchronously.
 #[derive(Debug)]
 pub struct Request<H: Handler + Debug + Send + 'static>(
     Easy2<H>,
