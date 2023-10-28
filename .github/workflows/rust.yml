@@ -27,4 +27,4 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - name: Run tests
-      run: cargo test --verbose --features multi
+      run: cargo test --verbose
