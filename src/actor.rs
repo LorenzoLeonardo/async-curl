@@ -1,8 +1,13 @@
 use std::fmt::Debug;
+use std::time::Duration;
 
 use curl::easy::{Easy2, Handler};
+use curl::multi::Multi;
+use tokio::runtime::Builder;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
+use tokio::task::LocalSet;
+use tokio::time::sleep;
 
 use crate::error::Error;
 /// CurlActor is responsible for performing
@@ -101,29 +106,25 @@ impl<H> CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
 {
-    /// This creates the new instance of CurlActor.
-    /// This spawns a new asynchronous task using tokio::spawn
-    /// and tokio::task::spawn_blocking inside tokio::spawn to perform the blocking curl perform inside.
-    ///
-    /// According to tokio documentation [here](https://docs.rs/tokio/1.28.0/tokio/index.html#cpu-bound-tasks-and-blocking-code),
-    /// blocking calls must be perform inside tokio::task::spawn_blocking otherwise block other tasks from running.
-    ///
-    /// The perform_curl function is executed when send_request is called.
+    /// This creates the new instance of CurlActor to handle Curl perform asynchronously using Curl Multi
+    /// in a background thread to avoid blocking of other tasks.
     pub fn new() -> Self {
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
-        tokio::spawn(async move {
-            while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
-                if let Err(err) = tokio::task::spawn_blocking(move || {
-                    let response = easy2.perform().map(|_| easy2).map_err(Error::from);
-                    if let Err(res) = oneshot_sender.send(response) {
-                        eprintln!("Warning! The receiver has been dropped. {:?}", res);
-                    }
-                })
-                .await
-                {
-                    eprintln!("Error! Join Error. {:?}", err);
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+
+        std::thread::spawn(move || {
+            let local = LocalSet::new();
+            local.spawn_local(async move {
+                while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
+                    tokio::task::spawn_local(async move {
+                        let response = perform_curl_multi(easy2).await;
+                        if let Err(res) = oneshot_sender.send(response) {
+                            eprintln!("Warning! The receiver has been dropped. {:?}", res);
+                        }
+                    });
                 }
-            }
+            });
+            runtime.block_on(local);
         });
 
         Self { request_sender }
@@ -144,6 +145,46 @@ where
     }
 }
 
+async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
+    easy2: Easy2<H>,
+) -> Result<Easy2<H>, Error<H>> {
+    let multi = Multi::new();
+    let handle = multi.add2(easy2).map_err(|e| Error::Multi(e))?;
+
+    while multi.perform().map_err(|e| Error::Multi(e))? != 0 {
+        let timeout_result = multi
+            .get_timeout()
+            .map(|d| d.unwrap_or_else(|| Duration::from_secs(2)));
+
+        let timeout = match timeout_result {
+            Ok(duration) => duration,
+            Err(multi_error) => {
+                if !multi_error.is_call_perform() {
+                    return Err(Error::Multi(multi_error));
+                }
+                Duration::ZERO
+            }
+        };
+
+        if !timeout.is_zero() {
+            sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    let mut error: Option<Error<H>> = None;
+    multi.messages(|msg| {
+        if let Some(Err(e)) = msg.result() {
+            error = Some(Error::Curl(e));
+        }
+    });
+
+    if let Some(e) = error {
+        Err(e)
+    } else {
+        multi.remove2(handle).map_err(|e| Error::Multi(e))
+    }
+}
+
 /// This contains the Easy2 object and a oneshot sender channel when passing into the
 /// background task to perform Curl asynchronously.
 #[derive(Debug)]
@@ -155,6 +196,7 @@ pub struct Request<H: Handler + Debug + Send + 'static>(
 #[cfg(test)]
 mod test {
     use std::convert::TryFrom;
+    use std::time::Duration;
 
     use http::StatusCode;
     use wiremock::matchers::method;
@@ -240,5 +282,46 @@ mod test {
         });
 
         let (_, _) = tokio::join!(spawn1, spawn2);
+    }
+
+    #[tokio::test]
+    async fn test_error() {
+        let url = "https://no-connection";
+
+        let curl = CurlActor::new();
+
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(url).unwrap();
+        easy2.get(true).unwrap();
+
+        let result = curl.send_request(easy2).await;
+        let _ = result.unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn test_concurrency_abort() {
+        let url = "https://no-connection";
+
+        let curl = CurlActor::new();
+
+        let curl_handle = tokio::spawn(async move {
+            let mut easy2 = Easy2::new(ResponseHandler::new());
+            easy2.url(url).unwrap();
+            easy2.get(true).unwrap();
+
+            let result = curl.send_request(easy2).await;
+            let _ = result.unwrap_err();
+            panic!("Not aborted, the future should be aborted.");
+        });
+
+        let other_task = tokio::spawn(async move {
+            for _n in 0..10 {
+                println!("Other task . . . .");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+
+        other_task.await.unwrap();
+        curl_handle.abort();
     }
 }
