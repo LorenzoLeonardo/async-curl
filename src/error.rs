@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use curl::{easy::Handler, MultiError};
+use curl::easy::Handler;
 use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 
 use crate::actor;
@@ -12,21 +12,8 @@ where
     H: Handler + Debug + Send + 'static,
 {
     Curl(curl::Error),
-    Multi(curl::MultiError),
     TokioRecv(RecvError),
     TokioSend(SendError<actor::Request<H>>),
-}
-
-/// This convert MultiError to our customized
-/// Error enum for ease of management of
-/// different errors from 3rd party crates.
-impl<H> From<MultiError> for Error<H>
-where
-    H: Handler + Debug + Send + 'static,
-{
-    fn from(err: MultiError) -> Self {
-        Error::Multi(err)
-    }
 }
 
 /// This convert RecvError to our customized
@@ -72,7 +59,6 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::Curl(err) => write!(f, "{}", err),
-            Error::Multi(err) => write!(f, "{}", err),
             Error::TokioRecv(err) => write!(f, "{}", err),
             Error::TokioSend(err) => write!(f, "{}", err),
         }

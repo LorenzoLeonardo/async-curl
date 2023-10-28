@@ -1,9 +1,9 @@
 [package]
 name = "async-curl"
 authors = ["Lorenzo Leonardo <enzotechcomputersolutions@gmail.com>"]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
-description = "This will perform curl Easy2 asynchronously for rust-lang using curl::multi and tokio"
+description = "An asynchronous implementation to perform curl operations with tokio."
 license = "MIT"
 repository = "https://github.com/LorenzoLeonardo/async-curl"
 homepage = "https://github.com/LorenzoLeonardo/async-curl"
