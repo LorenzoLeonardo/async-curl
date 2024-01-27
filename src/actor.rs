@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use curl::easy::{Easy2, Handler};
 use curl::multi::Multi;
+use log::trace;
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
@@ -119,7 +120,7 @@ where
                     tokio::task::spawn_local(async move {
                         let response = perform_curl_multi(easy2).await;
                         if let Err(res) = oneshot_sender.send(response) {
-                            eprintln!("Warning! The receiver has been dropped. {:?}", res);
+                            trace!("Warning! The receiver has been dropped. {:?}", res);
                         }
                     });
                 }
