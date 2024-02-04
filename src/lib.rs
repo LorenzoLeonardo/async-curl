@@ -50,3 +50,5 @@
 pub mod actor;
 pub mod error;
 pub mod response_handler;
+#[cfg(test)]
+mod tests;
