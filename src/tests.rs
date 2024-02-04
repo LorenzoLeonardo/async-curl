@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use curl::easy::Easy2;
 use http::StatusCode;
+use log::LevelFilter;
 use tokio::sync::Mutex;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
@@ -13,6 +14,15 @@ use wiremock::ResponseTemplate;
 
 use crate::actor::CurlActor;
 use crate::response_handler::ResponseHandler;
+
+#[ctor::ctor]
+fn setup_test_logger() {
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("your_crate_name=trace"),
+    )
+    .filter_level(LevelFilter::Trace)
+    .init();
+}
 
 async fn start_mock_server(
     node: &str,
@@ -121,7 +131,7 @@ async fn test_concurrency_abort() {
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
-        println!("HTTP task . . . .");
+        log::trace!("HTTP task . . . .");
         let _ = curl.send_request(easy2).await.unwrap();
         let mut lock = check_cancelled1.lock().await;
         *lock = false;
@@ -129,7 +139,7 @@ async fn test_concurrency_abort() {
 
     let other_task = tokio::spawn(async move {
         for _n in 0..10 {
-            println!("Other task . . . .");
+            log::trace!("Other task . . . .");
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     });
