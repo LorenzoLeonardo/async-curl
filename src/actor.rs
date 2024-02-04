@@ -197,9 +197,11 @@ pub struct Request<H: Handler + Debug + Send + 'static>(
 #[cfg(test)]
 mod test {
     use std::convert::TryFrom;
+    use std::sync::Arc;
     use std::time::Duration;
 
     use http::StatusCode;
+    use tokio::sync::Mutex;
     use wiremock::matchers::method;
     use wiremock::matchers::path;
     use wiremock::Mock;
@@ -301,28 +303,42 @@ mod test {
 
     #[tokio::test]
     async fn test_concurrency_abort() {
-        let url = "https://no-connection";
-
+        const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+        let server = start_mock_server(
+            "/async-test",
+            MOCK_BODY_RESPONSE.to_string(),
+            StatusCode::OK,
+        )
+        .await;
+        let url = format!("{}{}", server.uri(), "/async-test");
+        let check_cancelled = Arc::new(Mutex::new(true));
         let curl = CurlActor::new();
 
-        let curl_handle = tokio::spawn(async move {
+        let check_cancelled1 = check_cancelled.clone();
+        let http_task = tokio::spawn(async move {
             let mut easy2 = Easy2::new(ResponseHandler::new());
-            easy2.url(url).unwrap();
+            easy2.url(url.as_str()).unwrap();
             easy2.get(true).unwrap();
-
-            let result = curl.send_request(easy2).await;
-            let _ = result.unwrap_err();
-            panic!("Not aborted, the future should be aborted.");
+            println!("HTTP task . . . .");
+            let _ = curl.send_request(easy2).await.unwrap();
+            let mut lock = check_cancelled1.lock().await;
+            *lock = false;
         });
 
         let other_task = tokio::spawn(async move {
             for _n in 0..10 {
                 println!("Other task . . . .");
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
         });
 
-        other_task.await.unwrap();
-        curl_handle.abort();
+        let abort_task = tokio::spawn(async move {
+            http_task.abort();
+        });
+
+        let (other_task, abort_task) = tokio::join!(other_task, abort_task);
+        other_task.unwrap();
+        abort_task.unwrap();
+        assert!(*check_cancelled.lock().await);
     }
 }
