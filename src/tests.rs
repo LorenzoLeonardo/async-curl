@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use curl::easy::Easy2;
+use curl::easy::Handler;
+use curl::easy::WriteError;
 use http::StatusCode;
 use log::LevelFilter;
 use tokio::sync::Mutex;
@@ -13,7 +15,34 @@ use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 
 use crate::actor::CurlActor;
-use crate::response_handler::ResponseHandler;
+
+#[derive(Debug, Clone, Default)]
+pub struct ResponseHandler {
+    data: Vec<u8>,
+}
+
+impl Handler for ResponseHandler {
+    /// This will store the response from the server
+    /// to the data vector.
+    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
+        self.data.extend_from_slice(data);
+        Ok(data.len())
+    }
+}
+
+impl ResponseHandler {
+    /// Instantiation of the ResponseHandler
+    /// and initialize the data vector.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// This will consumed the object and
+    /// give the data to the caller
+    pub fn get_data(self) -> Vec<u8> {
+        self.data
+    }
+}
 
 #[ctor::ctor]
 fn setup_test_logger() {

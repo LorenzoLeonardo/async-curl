@@ -15,9 +15,36 @@ use crate::error::Error;
 /// the contructed Easy2 object at the background
 /// to perform it asynchronously.
 /// ```
-/// use curl::easy::Easy2;
-/// use async_curl::response_handler::ResponseHandler;
 /// use async_curl::actor::CurlActor;
+/// use curl::easy::{Easy2, Handler, WriteError};
+///
+/// #[derive(Debug, Clone, Default)]
+/// pub struct ResponseHandler {
+///     data: Vec<u8>,
+/// }
+///
+/// impl Handler for ResponseHandler {
+///     /// This will store the response from the server
+///     /// to the data vector.
+///     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
+///         self.data.extend_from_slice(data);
+///         Ok(data.len())
+///     }
+/// }
+///
+/// impl ResponseHandler {
+///     /// Instantiation of the ResponseHandler
+///     /// and initialize the data vector.
+///     pub fn new() -> Self {
+///         Self::default()
+///     }
+///
+///     /// This will consumed the object and
+///     /// give the data to the caller
+///     pub fn get_data(self) -> Vec<u8> {
+///         self.data
+///     }
+/// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>>{
@@ -38,8 +65,36 @@ use crate::error::Error;
 /// at the same time.
 ///
 /// ```
-/// use async_curl::{actor::CurlActor, response_handler::ResponseHandler};
-/// use curl::easy::Easy2;
+/// use async_curl::actor::CurlActor;
+/// use curl::easy::{Easy2, Handler, WriteError};
+///
+/// #[derive(Debug, Clone, Default)]
+/// pub struct ResponseHandler {
+///     data: Vec<u8>,
+/// }
+///
+/// impl Handler for ResponseHandler {
+///     /// This will store the response from the server
+///     /// to the data vector.
+///     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
+///         self.data.extend_from_slice(data);
+///         Ok(data.len())
+///     }
+/// }
+///
+/// impl ResponseHandler {
+///     /// Instantiation of the ResponseHandler
+///     /// and initialize the data vector.
+///     pub fn new() -> Self {
+///         Self::default()
+///     }
+///
+///     /// This will consumed the object and
+///     /// give the data to the caller
+///     pub fn get_data(self) -> Vec<u8> {
+///         self.data
+///     }
+/// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
