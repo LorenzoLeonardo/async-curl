@@ -2474,12 +2474,12 @@ where
     }
 
     /// Finalizes your build to proceed in performing CURL operation.
-    pub fn finalize(self) -> Result<HttpClient<C, Perform>, Error<C>> {
-        Ok(HttpClient::<C, Perform> {
+    pub fn finalize(self) -> HttpClient<C, Perform> {
+        HttpClient::<C, Perform> {
             curl: self.curl,
             easy: self.easy,
             _state: Perform,
-        })
+        }
     }
 }
 

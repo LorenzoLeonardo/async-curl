@@ -15,6 +15,7 @@ use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 
 use crate::actor::CurlActor;
+use crate::curl::HttpClient;
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
@@ -181,4 +182,34 @@ async fn test_concurrency_abort() {
     other_task.unwrap();
     abort_task.unwrap();
     assert!(*check_cancelled.lock().await);
+}
+
+#[tokio::test]
+async fn test_curl_builder() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+
+    let actor = CurlActor::new();
+    let collector = ResponseHandler::new();
+
+    let mut curl = HttpClient::new(actor, collector)
+        .url(url.as_str())
+        .unwrap()
+        .finalize()
+        .perform()
+        .await
+        .unwrap();
+
+    log::trace!("{:?}", curl);
+    let body = curl.get_ref().clone();
+    let status = curl.response_code().unwrap() as u16;
+
+    assert_eq!(body.get_data().as_slice(), MOCK_BODY_RESPONSE.as_bytes());
+    assert_eq!(status, StatusCode::OK.as_u16());
 }
