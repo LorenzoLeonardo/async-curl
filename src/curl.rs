@@ -13,7 +13,7 @@ pub struct Build;
 pub struct Perform;
 
 /// The HTTP Client struct that wraps curl Easy2.
-pub struct HttpClient<C, S>
+pub struct AsyncCurl<C, S>
 where
     C: Handler + std::fmt::Debug + Send + 'static,
 {
@@ -22,7 +22,7 @@ where
     _state: S,
 }
 
-impl<C> HttpClient<C, Build>
+impl<C> AsyncCurl<C, Build>
 where
     C: Handler + std::fmt::Debug + Send + 'static,
 {
@@ -2474,8 +2474,8 @@ where
     }
 
     /// Finalizes your build to proceed in performing CURL operation.
-    pub fn finalize(self) -> HttpClient<C, Perform> {
-        HttpClient::<C, Perform> {
+    pub fn finalize(self) -> AsyncCurl<C, Perform> {
+        AsyncCurl::<C, Perform> {
             curl: self.curl,
             easy: self.easy,
             _state: Perform,
@@ -2483,7 +2483,7 @@ where
     }
 }
 
-impl<C> HttpClient<C, Perform>
+impl<C> AsyncCurl<C, Perform>
 where
     C: Handler + std::fmt::Debug + Send,
 {

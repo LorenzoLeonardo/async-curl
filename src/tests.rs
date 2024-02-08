@@ -15,7 +15,7 @@ use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 
 use crate::actor::CurlActor;
-use crate::curl::HttpClient;
+use crate::curl::AsyncCurl;
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
@@ -198,7 +198,7 @@ async fn test_curl_builder() {
     let actor = CurlActor::new();
     let collector = ResponseHandler::new();
 
-    let mut curl = HttpClient::new(actor, collector)
+    let mut curl = AsyncCurl::new(actor, collector)
         .url(url.as_str())
         .unwrap()
         .finalize()
