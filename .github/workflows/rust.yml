@@ -27,6 +27,8 @@ jobs:
       run: cargo test --doc
     - name: Clippy
       run: cargo clippy --all --all-features -- --deny warnings
+    - name: Examples
+      run: cargo build --examples
     - name: Build
       run: cargo build --verbose
     - name: Run tests
