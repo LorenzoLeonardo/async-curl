@@ -19,15 +19,21 @@ use crate::curl::AsyncCurl;
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
-    data: Vec<u8>,
+    data: Option<Vec<u8>>,
 }
 
 impl Handler for ResponseHandler {
     /// This will store the response from the server
     /// to the data vector.
-    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
-        self.data.extend_from_slice(data);
-        Ok(data.len())
+    fn write(&mut self, stream: &[u8]) -> Result<usize, WriteError> {
+        if self.data.is_none() {
+            self.data = Some(stream.to_vec());
+        } else {
+            if let Some(ref mut data) = self.data {
+                data.extend_from_slice(stream);
+            }
+        }
+        Ok(stream.len())
     }
 }
 
@@ -38,10 +44,9 @@ impl ResponseHandler {
         Self::default()
     }
 
-    /// This will consumed the object and
-    /// give the data to the caller
-    pub fn get_data(self) -> Vec<u8> {
-        self.data
+    /// This will give the data to the receiving variable
+    pub fn take(&mut self) -> Option<Vec<u8>> {
+        self.data.take()
     }
 }
 
@@ -92,7 +97,7 @@ async fn test_async_requests() {
         let mut result = result.unwrap();
         // Test response body
         assert_eq!(
-            String::from_utf8_lossy(&result.get_ref().to_owned().get_data()),
+            String::from_utf8_lossy(&result.get_mut().take().unwrap()),
             MOCK_BODY_RESPONSE.to_string()
         );
 
@@ -114,7 +119,7 @@ async fn test_async_requests() {
         let mut result = result.unwrap();
         // Test response body
         assert_eq!(
-            String::from_utf8_lossy(&result.get_ref().to_owned().get_data()),
+            String::from_utf8_lossy(&result.get_mut().take().unwrap()),
             MOCK_BODY_RESPONSE.to_string()
         );
 
@@ -207,9 +212,9 @@ async fn test_curl_builder() {
         .unwrap();
 
     log::trace!("{:?}", curl);
-    let body = curl.get_ref().clone();
+    let body = curl.get_mut().take();
     let status = curl.response_code().unwrap() as u16;
 
-    assert_eq!(body.get_data().as_slice(), MOCK_BODY_RESPONSE.as_bytes());
+    assert_eq!(body, Some(MOCK_BODY_RESPONSE.as_bytes().to_vec()));
     assert_eq!(status, StatusCode::OK.as_u16());
 }

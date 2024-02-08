@@ -3,15 +3,21 @@ use curl::easy::{Easy2, Handler, WriteError};
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
-    data: Vec<u8>,
+    data: Option<Vec<u8>>,
 }
 
 impl Handler for ResponseHandler {
     /// This will store the response from the server
     /// to the data vector.
-    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
-        self.data.extend_from_slice(data);
-        Ok(data.len())
+    fn write(&mut self, stream: &[u8]) -> Result<usize, WriteError> {
+        if self.data.is_none() {
+            self.data = Some(stream.to_vec());
+        } else {
+            if let Some(ref mut data) = self.data {
+                data.extend_from_slice(stream);
+            }
+        }
+        Ok(stream.len())
     }
 }
 
@@ -22,10 +28,9 @@ impl ResponseHandler {
         Self::default()
     }
 
-    /// This will consumed the object and
-    /// give the data to the caller
-    pub fn get_data(self) -> Vec<u8> {
-        self.data
+    /// This will give the data to the receiving variable
+    pub fn take(&mut self) -> Option<Vec<u8>> {
+        self.data.take()
     }
 }
 
@@ -41,7 +46,7 @@ async fn main() {
     let spawn1 = tokio::spawn(async move {
         let mut result = actor1.send_request(easy2).await.unwrap();
 
-        let response = result.get_ref().to_owned().get_data();
+        let response = result.get_mut().take();
         let status = result.response_code().unwrap();
 
         println!("Response: {:?}", response);
@@ -55,7 +60,7 @@ async fn main() {
     let spawn2 = tokio::spawn(async move {
         let mut result = actor.send_request(easy2).await.unwrap();
 
-        let response = result.get_ref().to_owned().get_data();
+        let response = result.get_mut().take();
         let status = result.response_code().unwrap();
 
         println!("Response: {:?}", response);
