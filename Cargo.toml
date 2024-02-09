@@ -10,9 +10,9 @@ homepage = "https://github.com/LorenzoLeonardo/async-curl"
 documentation = "https://docs.rs/async-curl"
 
 [dependencies]
-curl = { version = "0.4", features = ["default"] }
-tokio = { version = "1.36", features = ["rt", "test-util", "macros"] }
+curl = "0.4"
 log = "0.4"
+tokio = { version = "1.36", features = ["rt", "test-util", "macros"] }
 
 [dev-dependencies]
 ctor = "0.2"
