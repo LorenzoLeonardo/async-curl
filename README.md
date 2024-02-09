@@ -1,5 +1,11 @@
 # async-curl
+
 This will perform curl Easy2 asynchronously for rust-lang via an Actor using tokio
+
+[![Latest Version](https://img.shields.io/crates/v/async-curl.svg)](https://crates.io/crates/async-curl)
+[![License](https://img.shields.io/github/license/LorenzoLeonardo/async-curl.svg)](LICENSE)
+[![Documentation](https://docs.rs/async-curl/badge.svg)](https://docs.rs/async-curl)
+[![Build Status](https://github.com/LorenzoLeonardo/async-curl/workflows/Rust/badge.svg)](https://github.com/LorenzoLeonardo/async-curl/actions)
 
 ## How to use with multiple async request
 
