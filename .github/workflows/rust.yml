@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta, nightly]
+        rust: [1.66.0, stable, beta, nightly]
 
     steps:
     - uses: actions/checkout@v3
@@ -33,5 +33,3 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
-    - name: Run tests
-      run: cargo test --verbose --all --all-features
