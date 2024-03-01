@@ -1,11 +1,10 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
 
 use curl::easy::Easy2;
 use curl::easy::Handler;
 use curl::easy::WriteError;
-use http::StatusCode;
+use http_types::StatusCode;
 use log::LevelFilter;
 use tokio::sync::Mutex;
 use wiremock::matchers::method;
@@ -29,10 +28,8 @@ impl Handler for ResponseHandler {
     fn write(&mut self, stream: &[u8]) -> Result<usize, WriteError> {
         if self.data.is_none() {
             self.data = Some(stream.to_vec());
-        } else {
-            if let Some(ref mut data) = self.data {
-                data.extend_from_slice(stream);
-            }
+        } else if let Some(ref mut data) = self.data {
+            data.extend_from_slice(stream);
         }
         Ok(stream.len())
     }
@@ -77,12 +74,12 @@ async fn start_mock_server(
 #[tokio::test]
 async fn test_async_requests() {
     const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
-    const MOCK_STATUS_CODE: StatusCode = StatusCode::OK;
+    const MOCK_STATUS_CODE: StatusCode = StatusCode::Ok;
 
     let server = start_mock_server(
         "/async-test",
         MOCK_BODY_RESPONSE.to_string(),
-        StatusCode::OK,
+        StatusCode::Ok,
     )
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
@@ -105,10 +102,7 @@ async fn test_async_requests() {
         // Test response status code
         let status_code = result.response_code().unwrap();
 
-        assert_eq!(
-            StatusCode::from_u16(u16::try_from(status_code).unwrap()).unwrap(),
-            MOCK_STATUS_CODE
-        );
+        assert_eq!(status_code, MOCK_STATUS_CODE as u32);
     });
 
     let mut easy2 = Easy2::new(ResponseHandler::new());
@@ -126,10 +120,7 @@ async fn test_async_requests() {
 
         // Test response status code
         let status_code = result.response_code().unwrap();
-        assert_eq!(
-            StatusCode::from_u16(u16::try_from(status_code).unwrap()).unwrap(),
-            MOCK_STATUS_CODE
-        );
+        assert_eq!(status_code, MOCK_STATUS_CODE as u32);
     });
 
     let (_, _) = tokio::join!(spawn1, spawn2);
@@ -155,7 +146,7 @@ async fn test_concurrency_abort() {
     let server = start_mock_server(
         "/async-test",
         MOCK_BODY_RESPONSE.to_string(),
-        StatusCode::OK,
+        StatusCode::Ok,
     )
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
@@ -196,7 +187,7 @@ async fn test_curl_builder() {
     let server = start_mock_server(
         "/async-test",
         MOCK_BODY_RESPONSE.to_string(),
-        StatusCode::OK,
+        StatusCode::Ok,
     )
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
@@ -217,5 +208,5 @@ async fn test_curl_builder() {
     let status = curl.response_code().unwrap() as u16;
 
     assert_eq!(body, Some(MOCK_BODY_RESPONSE.as_bytes().to_vec()));
-    assert_eq!(status, StatusCode::OK.as_u16());
+    assert_eq!(status, StatusCode::Ok);
 }
