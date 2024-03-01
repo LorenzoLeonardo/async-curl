@@ -10,6 +10,7 @@ homepage = "https://github.com/LorenzoLeonardo/async-curl"
 documentation = "https://docs.rs/async-curl"
 
 [dependencies]
+async-trait = "0.1.77"
 curl = "0.4"
 log = "0.4"
 tokio = { version = "1.36", features = ["rt", "test-util", "macros"] }

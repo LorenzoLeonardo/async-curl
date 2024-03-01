@@ -5,7 +5,10 @@ use curl::easy::{
     TimeCondition,
 };
 
-use crate::{actor::CurlActor, error::Error};
+use crate::{
+    actor::{Actor, CurlActor},
+    error::Error,
+};
 
 /// A type-state struct in building the HttpClient.
 pub struct Build;

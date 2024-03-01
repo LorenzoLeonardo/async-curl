@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use curl::easy::{Easy2, Handler};
 use curl::multi::Multi;
 use log::trace;
@@ -11,11 +12,20 @@ use tokio::task::LocalSet;
 use tokio::time::sleep;
 
 use crate::error::Error;
+
+#[async_trait]
+pub trait Actor<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>;
+}
+
 /// CurlActor is responsible for performing
 /// the contructed Easy2 object at the background
 /// to perform it asynchronously.
 /// ```
-/// use async_curl::actor::CurlActor;
+/// use async_curl::actor::{Actor, CurlActor};
 /// use curl::easy::{Easy2, Handler, WriteError};
 ///
 /// #[derive(Debug, Clone, Default)]
@@ -65,7 +75,7 @@ use crate::error::Error;
 /// at the same time.
 ///
 /// ```
-/// use async_curl::actor::CurlActor;
+/// use async_curl::actor::{Actor, CurlActor};
 /// use curl::easy::{Easy2, Handler, WriteError};
 ///
 /// #[derive(Debug, Clone, Default)]
@@ -158,6 +168,23 @@ where
     }
 }
 
+#[async_trait]
+impl<H> Actor<H> for CurlActor<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    /// This will send Easy2 into the background task that will perform
+    /// curl asynchronously, await the response in the oneshot receiver and
+    /// return Easy2 back to the caller.
+    async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
+        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
+        self.request_sender
+            .send(Request(easy2, oneshot_sender))
+            .await?;
+        oneshot_receiver.await?
+    }
+}
+
 impl<H> CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
@@ -184,20 +211,6 @@ where
         });
 
         Self { request_sender }
-    }
-
-    /// This will send Easy2 into the background task that will perform
-    /// curl asynchronously, await the response in the oneshot receiver and
-    /// return Easy2 back to the caller.
-    pub async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>
-    where
-        H: Handler + Debug + Send + 'static,
-    {
-        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
-        self.request_sender
-            .send(Request(easy2, oneshot_sender))
-            .await?;
-        oneshot_receiver.await?
     }
 }
 
