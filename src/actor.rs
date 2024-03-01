@@ -151,7 +151,7 @@ where
 /// # }
 /// ```
 ///
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
