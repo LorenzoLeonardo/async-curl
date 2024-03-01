@@ -14,6 +14,7 @@ use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 
+use crate::actor::Actor;
 use crate::actor::CurlActor;
 use crate::curl::AsyncCurl;
 
