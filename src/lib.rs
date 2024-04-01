@@ -6,7 +6,7 @@
 //! pub mod actor;
 //! pub mod error;
 //!
-//! use async_curl::actor::{Actor, CurlActor};
+//! use async_curl::{Actor, CurlActor};
 //! use curl::easy::{Easy2, Handler, WriteError};
 //!
 //! #[derive(Debug, Clone, Default)]
@@ -78,3 +78,7 @@ pub mod curl;
 pub mod error;
 #[cfg(test)]
 mod tests;
+
+pub use actor::*;
+pub use curl::*;
+pub use error::*;

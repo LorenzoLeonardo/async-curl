@@ -1,4 +1,4 @@
-use async_curl::actor::{Actor, CurlActor};
+use async_curl::{Actor, CurlActor};
 use curl::easy::{Easy2, Handler, WriteError};
 
 #[derive(Debug, Clone, Default)]
