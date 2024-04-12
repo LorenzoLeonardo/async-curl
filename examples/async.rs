@@ -1,5 +1,4 @@
-use async_curl::{Actor, CurlActor};
-use curl::easy::{Easy2, Handler, WriteError};
+use async_curl::{Actor, CurlActor, Easy2, Handler, WriteError};
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {

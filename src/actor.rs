@@ -25,8 +25,7 @@ where
 /// the contructed Easy2 object at the background
 /// to perform it asynchronously.
 /// ```
-/// use async_curl::actor::{Actor, CurlActor};
-/// use curl::easy::{Easy2, Handler, WriteError};
+/// use async_curl::{Actor, CurlActor, Easy2, Handler, WriteError};
 ///
 /// #[derive(Debug, Clone, Default)]
 /// pub struct ResponseHandler {
@@ -75,8 +74,7 @@ where
 /// at the same time.
 ///
 /// ```
-/// use async_curl::actor::{Actor, CurlActor};
-/// use curl::easy::{Easy2, Handler, WriteError};
+/// use async_curl::{Actor, CurlActor, Easy2, Handler, WriteError};
 ///
 /// #[derive(Debug, Clone, Default)]
 /// pub struct ResponseHandler {
