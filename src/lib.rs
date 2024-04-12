@@ -81,4 +81,5 @@ mod tests;
 
 pub use actor::*;
 pub use async_curl::*;
+pub use curl::easy::*;
 pub use error::*;
