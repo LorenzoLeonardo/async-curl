@@ -74,11 +74,11 @@
 //! }
 //! ```
 pub mod actor;
-pub mod curl;
+pub mod async_curl;
 pub mod error;
 #[cfg(test)]
 mod tests;
 
 pub use actor::*;
-pub use curl::*;
+pub use async_curl::*;
 pub use error::*;

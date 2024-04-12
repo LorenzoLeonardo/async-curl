@@ -15,7 +15,7 @@ use wiremock::ResponseTemplate;
 
 use crate::actor::Actor;
 use crate::actor::CurlActor;
-use crate::curl::AsyncCurl;
+use crate::async_curl::AsyncCurl;
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
