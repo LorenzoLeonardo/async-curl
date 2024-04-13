@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
-use curl::easy::{
+pub use curl::easy;
+use easy::{
     Auth, Easy2, Form, Handler, HttpVersion, IpResolve, List, NetRc, ProxyType, SslOpt, SslVersion,
     TimeCondition,
 };

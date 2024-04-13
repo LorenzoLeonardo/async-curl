@@ -1,9 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use curl::easy::Easy2;
-use curl::easy::Handler;
-use curl::easy::WriteError;
 use http_types::StatusCode;
 use log::LevelFilter;
 use tokio::sync::Mutex;
@@ -15,7 +12,8 @@ use wiremock::ResponseTemplate;
 
 use crate::actor::Actor;
 use crate::actor::CurlActor;
-use crate::async_curl::AsyncCurl;
+use crate::easy::{Easy2, Handler, WriteError};
+use crate::AsyncCurl;
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {

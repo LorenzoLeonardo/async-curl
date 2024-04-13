@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use curl::easy::Handler;
 use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 
 use crate::actor;
+use crate::easy::Handler;
 
 /// This the enum of Errors for this crate.
 #[derive(Debug)]

@@ -3,7 +3,8 @@
 //!
 //! ## perform Curl Easy2 asynchronously
 //! ```rust
-//! use async_curl::{Actor, CurlActor, Easy2, Handler, WriteError};
+//! use async_curl::{Actor, CurlActor};
+//! use async_curl::easy::{Easy2, Handler, WriteError};
 //!
 //! #[derive(Debug, Clone, Default)]
 //! pub struct ResponseHandler {
@@ -70,12 +71,11 @@
 //! }
 //! ```
 pub mod actor;
-pub mod async_curl;
+pub mod curl;
 pub mod error;
 #[cfg(test)]
 mod tests;
 
 pub use actor::*;
-pub use async_curl::*;
-pub use curl::easy::*;
+pub use curl::*;
 pub use error::*;

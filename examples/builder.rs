@@ -1,4 +1,5 @@
-use async_curl::{AsyncCurl, CurlActor, Handler, WriteError};
+use async_curl::easy::{Handler, WriteError};
+use async_curl::{AsyncCurl, CurlActor};
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {

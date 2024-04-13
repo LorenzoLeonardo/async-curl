@@ -11,7 +11,8 @@ This will perform curl Easy2 asynchronously for rust-lang via an Actor using tok
 ## How to use with multiple async request
 
 ```rust
-use async_curl::{Actor, CurlActor, Easy2, Handler, WriteError};
+use async_curl::{Actor, CurlActor};
+use async_curl::easy::{Easy2, Handler, WriteError};
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
