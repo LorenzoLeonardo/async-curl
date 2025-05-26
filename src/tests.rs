@@ -6,6 +6,7 @@ use curl::easy::Handler;
 use curl::easy::WriteError;
 use http::status::StatusCode;
 use log::LevelFilter;
+use tokio::runtime::Builder;
 use tokio::sync::Mutex;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
@@ -209,4 +210,46 @@ async fn test_curl_builder() {
 
     assert_eq!(body, Some(MOCK_BODY_RESPONSE.as_bytes().to_vec()));
     assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_concurrency_abort_multi_threaded_runtime() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+    let check_cancelled = Arc::new(Mutex::new(true));
+    let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let curl = CurlActor::new_runtime(runtime);
+
+    let check_cancelled1 = check_cancelled.clone();
+    let http_task = tokio::spawn(async move {
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(url.as_str()).unwrap();
+        easy2.get(true).unwrap();
+        log::trace!("HTTP task . . . .");
+        let _ = curl.send_request(easy2).await.unwrap();
+        let mut lock = check_cancelled1.lock().await;
+        *lock = false;
+    });
+
+    let other_task = tokio::spawn(async move {
+        for _n in 0..10 {
+            log::trace!("Other task . . . .");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+
+    let abort_task = tokio::spawn(async move {
+        http_task.abort();
+    });
+
+    let (other_task, abort_task) = tokio::join!(other_task, abort_task);
+    other_task.unwrap();
+    abort_task.unwrap();
+    assert!(*check_cancelled.lock().await);
 }

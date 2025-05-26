@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use curl::easy::{Easy2, Handler};
 use curl::multi::Multi;
 use log::trace;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 use tokio::task::LocalSet;
@@ -194,6 +194,30 @@ where
     pub fn new() -> Self {
         let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
         let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+
+        std::thread::spawn(move || {
+            let local = LocalSet::new();
+            local.spawn_local(async move {
+                while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
+                    tokio::task::spawn_local(async move {
+                        let response = perform_curl_multi(easy2).await;
+                        if let Err(res) = oneshot_sender.send(response) {
+                            trace!("Warning! The receiver has been dropped. {:?}", res);
+                        }
+                    });
+                }
+            });
+            runtime.block_on(local);
+        });
+
+        Self { request_sender }
+    }
+
+    /// This creates the new instance of CurlActor to handle Curl perform asynchronously using Curl Multi
+    /// in a background thread to avoid blocking of other tasks. The user can provide a custom runtime
+    /// to use for the background task.
+    pub fn new_runtime(runtime: Runtime) -> Self {
+        let (request_sender, mut request_receiver) = mpsc::channel::<Request<H>>(1);
 
         std::thread::spawn(move || {
             let local = LocalSet::new();
