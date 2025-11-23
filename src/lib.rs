@@ -82,3 +82,7 @@ mod tests;
 pub use actor::*;
 pub use curl::*;
 pub use error::*;
+
+pub mod dep {
+    pub use curl;
+}
