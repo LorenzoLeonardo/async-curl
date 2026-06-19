@@ -347,22 +347,28 @@ async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
                 "perform_curl_multi: waiting for IO or timeout {:?}",
                 timeout
             );
-            // Build waitfds from the currently tracked sockets.
-            let guard = match socket_map.lock() {
-                Ok(g) => g,
+
+            // Snapshot the socket map while holding the mutex, then drop the
+            // guard before calling `multi.wait` to avoid deadlocks if libcurl
+            // invokes `socket_function` during the wait (which would try to
+            // lock the same mutex).
+            let sockets: Vec<(Socket, (bool, bool))> = match socket_map.lock() {
+                Ok(g) => g.iter().map(|(s, bo)| (*s, *bo)).collect(),
                 Err(poison) => {
                     trace!("perform_curl_multi: socket_map mutex poisoned, recovering");
-                    poison.into_inner()
+                    let g = poison.into_inner();
+                    g.iter().map(|(s, bo)| (*s, *bo)).collect()
                 }
             };
-            let mut waitfds: Vec<WaitFd> = Vec::with_capacity(guard.len());
-            for (fd, (inp, out)) in guard.iter() {
+
+            let mut waitfds: Vec<WaitFd> = Vec::with_capacity(sockets.len());
+            for (fd, (inp, out)) in sockets.into_iter() {
                 let mut w = WaitFd::new();
-                w.set_fd(*fd);
-                if *inp {
+                w.set_fd(fd);
+                if inp {
                     w.poll_on_read(true);
                 }
-                if *out {
+                if out {
                     w.poll_on_write(true);
                 }
                 waitfds.push(w);
@@ -379,17 +385,29 @@ async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
         }
     }
 
-    let mut error: Option<Error<H>> = None;
+    // Inspect messages for transfer-level errors.
+    let mut transfer_error: Option<Error<H>> = None;
     multi.messages(|msg| {
         if let Some(Err(e)) = msg.result() {
-            error = Some(Error::Curl(e));
+            transfer_error = Some(Error::Curl(e));
         }
     });
 
-    if let Some(e) = error {
+    // Always attempt to remove the handle to clean up resources. If there was
+    // a transfer error prefer returning that error, but still try to perform
+    // the removal and log any cleanup failure.
+    let cleanup = multi.remove2(handle).map_err(|e| Error::Multi(e));
+
+    if let Some(e) = transfer_error {
+        if let Err(ref clean_err) = cleanup {
+            trace!(
+                "perform_curl_multi: remove2 failed during cleanup: {:?}",
+                clean_err
+            );
+        }
         Err(e)
     } else {
-        multi.remove2(handle).map_err(|e| Error::Multi(e))
+        cleanup
     }
 }
 
