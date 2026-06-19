@@ -211,6 +211,15 @@ where
         Self { request_sender }
     }
 
+    /// Create a new CurlActor with a user-provided runtime and configurable channel capacity.
+    pub fn new_runtime_with_capacity(runtime: Runtime, capacity: usize) -> Self {
+        let (request_sender, request_receiver) = mpsc::channel::<Request<H>>(capacity);
+
+        Self::spawn_actor(runtime, request_receiver);
+
+        Self { request_sender }
+    }
+
     fn spawn_actor(runtime: Runtime, mut request_receiver: Receiver<Request<H>>) {
         std::thread::spawn(move || {
             let local = LocalSet::new();

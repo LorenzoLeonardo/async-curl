@@ -253,3 +253,32 @@ async fn test_concurrency_abort_multi_threaded_runtime() {
     abort_task.unwrap();
     assert!(*check_cancelled.lock().await);
 }
+
+#[tokio::test]
+async fn test_new_runtime_with_capacity() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/capacity-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/capacity-test");
+
+    let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let curl = CurlActor::new_runtime_with_capacity(runtime, 4);
+
+    let mut easy2 = Easy2::new(ResponseHandler::new());
+    easy2.url(url.as_str()).unwrap();
+    easy2.get(true).unwrap();
+
+    let result = curl.send_request(easy2).await;
+    let mut result = result.unwrap();
+
+    assert_eq!(
+        String::from_utf8_lossy(&result.get_mut().take().unwrap()),
+        MOCK_BODY_RESPONSE.to_string()
+    );
+    let status_code = result.response_code().unwrap() as u16;
+    assert_eq!(status_code, StatusCode::OK.as_u16());
+}
