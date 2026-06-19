@@ -49,7 +49,7 @@ impl ResponseHandler {
     }
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn setup_test_logger() {
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("your_crate_name=trace"),
