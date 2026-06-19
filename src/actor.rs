@@ -309,7 +309,9 @@ async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
         };
 
         if !timeout.is_zero() {
-            sleep(Duration::from_millis(200)).await;
+            // Many suggessted to use the timeout value directly, but without this maximum sleep of 200 ms causes hang on MACOS. This is a workaround to prevent that.
+            log::info!("Sleeping for {:?} before next perform call...", timeout);
+            sleep(std::cmp::min(timeout, Duration::from_millis(200))).await;
         }
     }
 
