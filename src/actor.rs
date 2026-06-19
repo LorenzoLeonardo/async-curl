@@ -151,12 +151,41 @@ where
 /// # }
 /// ```
 ///
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
+struct Inner<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    request_sender: Option<Sender<Request<H>>>,
+    join_handle: Option<JoinHandle<()>>,
+}
+
+impl<H> Drop for Inner<H>
+where
+    H: Handler + Debug + Send + 'static,
+{
+    fn drop(&mut self) {
+        // Take and drop the sender so the background actor sees channel closed.
+        if let Some(sender) = self.request_sender.take() {
+            drop(sender);
+            trace!("Request sender dropped, signaling background actor to shut down.");
+        }
+        // Join the background thread to ensure graceful shutdown.
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+            trace!("Background actor thread joined successfully.");
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CurlActor<H>
 where
     H: Handler + Debug + Send + 'static,
 {
-    request_sender: Sender<Request<H>>,
+    inner: Arc<Inner<H>>,
 }
 
 impl<H> Default for CurlActor<H>
@@ -178,7 +207,10 @@ where
     /// return Easy2 back to the caller.
     async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
         let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
-        self.request_sender
+        self.inner
+            .request_sender
+            .as_ref()
+            .expect("request_sender missing")
             .send(Request(easy2, oneshot_sender))
             .await?;
         oneshot_receiver.await?
@@ -195,9 +227,14 @@ where
         let runtime = Builder::new_current_thread().enable_all().build().unwrap();
         let (request_sender, request_receiver) = mpsc::channel::<Request<H>>(1);
 
-        Self::spawn_actor(runtime, request_receiver);
+        let handle = Self::spawn_actor(runtime, request_receiver);
 
-        Self { request_sender }
+        Self {
+            inner: Arc::new(Inner {
+                request_sender: Some(request_sender),
+                join_handle: Some(handle),
+            }),
+        }
     }
 
     /// This creates the new instance of CurlActor to handle Curl perform asynchronously using Curl Multi
@@ -206,21 +243,31 @@ where
     pub fn new_runtime(runtime: Runtime) -> Self {
         let (request_sender, request_receiver) = mpsc::channel::<Request<H>>(1);
 
-        Self::spawn_actor(runtime, request_receiver);
+        let handle = Self::spawn_actor(runtime, request_receiver);
 
-        Self { request_sender }
+        Self {
+            inner: Arc::new(Inner {
+                request_sender: Some(request_sender),
+                join_handle: Some(handle),
+            }),
+        }
     }
 
     /// Create a new CurlActor with a user-provided runtime and configurable channel capacity.
     pub fn new_runtime_with_capacity(runtime: Runtime, capacity: usize) -> Self {
         let (request_sender, request_receiver) = mpsc::channel::<Request<H>>(capacity);
 
-        Self::spawn_actor(runtime, request_receiver);
+        let handle = Self::spawn_actor(runtime, request_receiver);
 
-        Self { request_sender }
+        Self {
+            inner: Arc::new(Inner {
+                request_sender: Some(request_sender),
+                join_handle: Some(handle),
+            }),
+        }
     }
 
-    fn spawn_actor(runtime: Runtime, mut request_receiver: Receiver<Request<H>>) {
+    fn spawn_actor(runtime: Runtime, mut request_receiver: Receiver<Request<H>>) -> JoinHandle<()> {
         std::thread::spawn(move || {
             let local = LocalSet::new();
             local.spawn_local(async move {
@@ -234,7 +281,7 @@ where
                 }
             });
             runtime.block_on(local);
-        });
+        })
     }
 }
 
