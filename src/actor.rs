@@ -3,13 +3,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use curl::easy::{Easy2, Handler};
-use curl::multi::Multi;
+use curl::multi::{Multi, Socket, WaitFd};
 use log::trace;
+use std::collections::HashMap;
+use std::sync::Mutex;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::task::LocalSet;
-use tokio::time::sleep;
 
 use crate::error::Error;
 
@@ -290,7 +291,38 @@ where
 async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
     easy2: Easy2<H>,
 ) -> Result<Easy2<H>, Error<H>> {
-    let multi = Multi::new();
+    let mut multi = Multi::new();
+
+    // Track sockets libcurl wants us to wait on. We populate this via
+    // `socket_function` and then construct `WaitFd` entries from it before
+    // calling `multi.wait`.
+    let socket_map: std::sync::Arc<Mutex<HashMap<Socket, (bool, bool)>>> =
+        std::sync::Arc::new(Mutex::new(HashMap::new()));
+
+    {
+        let map = socket_map.clone();
+        multi
+            .socket_function(move |socket, events, _| match map.lock() {
+                Ok(mut m) => {
+                    if events.remove() {
+                        m.remove(&socket);
+                    } else {
+                        m.insert(socket, (events.input(), events.output()));
+                    }
+                }
+                Err(poison) => {
+                    trace!("socket_function: socket_map mutex poisoned, recovering");
+                    let mut m = poison.into_inner();
+                    if events.remove() {
+                        m.remove(&socket);
+                    } else {
+                        m.insert(socket, (events.input(), events.output()));
+                    }
+                }
+            })
+            .map_err(|e| Error::Multi(e))?;
+    }
+
     let handle = multi.add2(easy2).map_err(|e| Error::Multi(e))?;
 
     while multi.perform().map_err(|e| Error::Multi(e))? != 0 {
@@ -309,9 +341,41 @@ async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
         };
 
         if !timeout.is_zero() {
-            // Many suggessted to use the timeout value directly, but without this maximum sleep of 200 ms causes hang on MACOS. This is a workaround to prevent that.
-            log::info!("Sleeping for {:?} before next perform call...", timeout);
-            sleep(std::cmp::min(timeout, Duration::from_millis(200))).await;
+            // Prefer libcurl's wait API to be event-driven and avoid arbitrary sleeps.
+            // This is cross-platform and should avoid the macOS SSL hang observed.
+            trace!(
+                "perform_curl_multi: waiting for IO or timeout {:?}",
+                timeout
+            );
+            // Build waitfds from the currently tracked sockets.
+            let guard = match socket_map.lock() {
+                Ok(g) => g,
+                Err(poison) => {
+                    trace!("perform_curl_multi: socket_map mutex poisoned, recovering");
+                    poison.into_inner()
+                }
+            };
+            let mut waitfds: Vec<WaitFd> = Vec::with_capacity(guard.len());
+            for (fd, (inp, out)) in guard.iter() {
+                let mut w = WaitFd::new();
+                w.set_fd(*fd);
+                if *inp {
+                    w.poll_on_read(true);
+                }
+                if *out {
+                    w.poll_on_write(true);
+                }
+                waitfds.push(w);
+            }
+
+            let ready = multi
+                .wait(&mut waitfds, timeout)
+                .map_err(|e| Error::Multi(e))?;
+            trace!(
+                "perform_curl_multi: wait completed, {} fds ready (buffered {})",
+                ready,
+                waitfds.len()
+            );
         }
     }
 
