@@ -169,11 +169,13 @@ where
     fn drop(&mut self) {
         // Take and drop the sender so the background actor sees channel closed.
         if let Some(sender) = self.request_sender.take() {
+            trace!("Dropping request sender to signal background actor to shut down.");
             drop(sender);
             trace!("Request sender dropped, signaling background actor to shut down.");
         }
         // Join the background thread to ensure graceful shutdown.
         if let Some(handle) = self.join_handle.take() {
+            trace!("Attempting to join background actor thread for graceful shutdown...");
             let _ = handle.join();
             trace!("Background actor thread joined successfully.");
         }
