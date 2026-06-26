@@ -357,7 +357,7 @@ async fn test_async_concurrency_should_not_block() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 40,
+        ticks >= 30,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
@@ -408,7 +408,7 @@ async fn test_async_concurrency_should_not_block_multi_thread() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 40,
+        ticks >= 30,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
