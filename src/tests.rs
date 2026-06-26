@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -292,4 +294,74 @@ async fn test_new_runtime_with_capacity() {
     );
     let status_code = result.response_code().unwrap() as u16;
     assert_eq!(status_code, StatusCode::OK.as_u16());
+}
+
+async fn start_mock_server_with_delay(
+    node: &str,
+    mock_body: String,
+    mock_status_code: StatusCode,
+    delay: Duration,
+) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(node))
+        .respond_with(
+            ResponseTemplate::new(mock_status_code)
+                .set_delay(delay)
+                .set_body_string(mock_body),
+        )
+        .mount(&server)
+        .await;
+    server
+}
+
+// Ensure other futures can run while waiting for a curl request to complete,
+// even if the curl request takes a long time to complete.
+#[tokio::test(flavor = "current_thread")]
+async fn test_async_concurrency_should_not_block() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+
+    let server = start_mock_server_with_delay(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+        Duration::from_millis(500), // Keep the request in-flight while verifying other futures make progress.
+    )
+    .await;
+
+    let url = format!("{}{}", server.uri(), "/async-test");
+
+    let curl = CurlActor::new();
+
+    let http_task = tokio::spawn(async move {
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(&url).unwrap();
+        easy2.get(true).unwrap();
+
+        curl.send_request(easy2).await.unwrap();
+    });
+
+    let progress = Arc::new(AtomicUsize::new(0));
+    let progress_clone = progress.clone();
+
+    let ticker = tokio::spawn(async move {
+        let start = tokio::time::Instant::now();
+
+        while start.elapsed() <= Duration::from_millis(500) {
+            progress_clone.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    ticker.await.unwrap();
+
+    let ticks = progress.load(Ordering::Relaxed);
+
+    assert!(
+        ticks >= 40,
+        "executor appears blocked: only {} ticks executed in 500ms",
+        ticks
+    );
+    println!("Ticks executed in 500ms: {}", ticks);
+
+    http_task.await.unwrap();
 }
