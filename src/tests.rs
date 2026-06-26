@@ -365,3 +365,54 @@ async fn test_async_concurrency_should_not_block() {
 
     http_task.await.unwrap();
 }
+
+// Ensure other futures can run while waiting for a curl request to complete,
+// even if the curl request takes a long time to complete.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_async_concurrency_should_not_block_multi_thread() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+
+    let server = start_mock_server_with_delay(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+        Duration::from_millis(500), // Keep the request in-flight while verifying other futures make progress.
+    )
+    .await;
+
+    let url = format!("{}{}", server.uri(), "/async-test");
+    let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let curl = CurlActor::new_runtime(runtime);
+
+    let http_task = tokio::spawn(async move {
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(&url).unwrap();
+        easy2.get(true).unwrap();
+
+        curl.send_request(easy2).await.unwrap();
+    });
+
+    let progress = Arc::new(AtomicUsize::new(0));
+    let progress_clone = progress.clone();
+
+    let ticker = tokio::spawn(async move {
+        let start = tokio::time::Instant::now();
+
+        while start.elapsed() <= Duration::from_millis(500) {
+            progress_clone.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    ticker.await.unwrap();
+
+    let ticks = progress.load(Ordering::Relaxed);
+
+    assert!(
+        ticks >= 40,
+        "executor appears blocked: only {} ticks executed in 500ms",
+        ticks
+    );
+    println!("Ticks executed in 500ms: {}", ticks);
+
+    http_task.await.unwrap();
+}
