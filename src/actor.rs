@@ -3,10 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use curl::easy::{Easy2, Handler};
-use curl::multi::{Multi, Socket, WaitFd};
+use curl::multi::Multi;
 use log::trace;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
@@ -291,124 +289,65 @@ where
 async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
     easy2: Easy2<H>,
 ) -> Result<Easy2<H>, Error<H>> {
-    let mut multi = Multi::new();
+    tokio::task::spawn_blocking(move || -> Result<Easy2<H>, Error<H>> {
+        let multi = Multi::new();
+        let handle = multi.add2(easy2).map_err(|e| Error::Multi(e))?;
 
-    // Track sockets libcurl wants us to wait on. We populate this via
-    // `socket_function` and then construct `WaitFd` entries from it before
-    // calling `multi.wait`.
-    let socket_map: std::sync::Arc<Mutex<HashMap<Socket, (bool, bool)>>> =
-        std::sync::Arc::new(Mutex::new(HashMap::new()));
+        while multi.perform().map_err(|e| Error::Multi(e))? != 0 {
+            let timeout_result = multi
+                .get_timeout()
+                .map(|d| d.unwrap_or_else(|| Duration::from_secs(2)));
 
-    {
-        let map = socket_map.clone();
-        multi
-            .socket_function(move |socket, events, _| match map.lock() {
-                Ok(mut m) => {
-                    if events.remove() {
-                        m.remove(&socket);
-                    } else {
-                        m.insert(socket, (events.input(), events.output()));
+            let timeout = match timeout_result {
+                Ok(duration) => duration,
+                Err(multi_error) => {
+                    if !multi_error.is_call_perform() {
+                        return Err(Error::Multi(multi_error));
                     }
-                }
-                Err(poison) => {
-                    trace!("socket_function: socket_map mutex poisoned, recovering");
-                    let mut m = poison.into_inner();
-                    if events.remove() {
-                        m.remove(&socket);
-                    } else {
-                        m.insert(socket, (events.input(), events.output()));
-                    }
-                }
-            })
-            .map_err(|e| Error::Multi(e))?;
-    }
-
-    let handle = multi.add2(easy2).map_err(|e| Error::Multi(e))?;
-
-    while multi.perform().map_err(|e| Error::Multi(e))? != 0 {
-        let timeout_result = multi
-            .get_timeout()
-            .map(|d| d.unwrap_or_else(|| Duration::from_secs(2)));
-
-        let timeout = match timeout_result {
-            Ok(duration) => duration,
-            Err(multi_error) => {
-                if !multi_error.is_call_perform() {
-                    return Err(Error::Multi(multi_error));
-                }
-                Duration::ZERO
-            }
-        };
-
-        if !timeout.is_zero() {
-            // Prefer libcurl's wait API to be event-driven and avoid arbitrary sleeps.
-            // This is cross-platform and should avoid the macOS SSL hang observed.
-            trace!(
-                "perform_curl_multi: waiting for IO or timeout {:?}",
-                timeout
-            );
-
-            // Snapshot the socket map while holding the mutex, then drop the
-            // guard before calling `multi.wait` to avoid deadlocks if libcurl
-            // invokes `socket_function` during the wait (which would try to
-            // lock the same mutex).
-            let sockets: Vec<(Socket, (bool, bool))> = match socket_map.lock() {
-                Ok(g) => g.iter().map(|(s, bo)| (*s, *bo)).collect(),
-                Err(poison) => {
-                    trace!("perform_curl_multi: socket_map mutex poisoned, recovering");
-                    let g = poison.into_inner();
-                    g.iter().map(|(s, bo)| (*s, *bo)).collect()
+                    Duration::ZERO
                 }
             };
 
-            let mut waitfds: Vec<WaitFd> = Vec::with_capacity(sockets.len());
-            for (fd, (inp, out)) in sockets.into_iter() {
-                let mut w = WaitFd::new();
-                w.set_fd(fd);
-                if inp {
-                    w.poll_on_read(true);
-                }
-                if out {
-                    w.poll_on_write(true);
-                }
-                waitfds.push(w);
+            if !timeout.is_zero() {
+                trace!(
+                    "perform_curl_multi: waiting for IO or timeout {:?}",
+                    timeout
+                );
+                let ready = multi.wait(&mut [], timeout).map_err(Error::Multi)?;
+                trace!(
+                    "perform_curl_multi: wait completed, {} sockets ready",
+                    ready
+                );
             }
-
-            let ready = multi
-                .wait(&mut waitfds, timeout)
-                .map_err(|e| Error::Multi(e))?;
-            trace!(
-                "perform_curl_multi: wait completed, {} fds ready (buffered {})",
-                ready,
-                waitfds.len()
-            );
         }
-    }
 
-    // Inspect messages for transfer-level errors.
-    let mut transfer_error: Option<Error<H>> = None;
-    multi.messages(|msg| {
-        if let Some(Err(e)) = msg.result() {
-            transfer_error = Some(Error::Curl(e));
+        // Inspect messages for transfer-level errors.
+        let mut transfer_error: Option<Error<H>> = None;
+        multi.messages(|msg| {
+            if let Some(Err(e)) = msg.result() {
+                transfer_error = Some(Error::Curl(e));
+            }
+        });
+
+        // Always attempt to remove the handle to clean up resources. If there was
+        // a transfer error prefer returning that error, but still try to perform
+        // the removal and log any cleanup failure.
+        let cleanup = multi.remove2(handle).map_err(|e| Error::Multi(e));
+
+        if let Some(e) = transfer_error {
+            if let Err(ref clean_err) = cleanup {
+                trace!(
+                    "perform_curl_multi: remove2 failed during cleanup: {:?}",
+                    clean_err
+                );
+            }
+            Err(e)
+        } else {
+            cleanup
         }
-    });
-
-    // Always attempt to remove the handle to clean up resources. If there was
-    // a transfer error prefer returning that error, but still try to perform
-    // the removal and log any cleanup failure.
-    let cleanup = multi.remove2(handle).map_err(|e| Error::Multi(e));
-
-    if let Some(e) = transfer_error {
-        if let Err(ref clean_err) = cleanup {
-            trace!(
-                "perform_curl_multi: remove2 failed during cleanup: {:?}",
-                clean_err
-            );
-        }
-        Err(e)
-    } else {
-        cleanup
-    }
+    })
+    .await
+    .map_err(Error::JoinError)?
 }
 
 /// This contains the Easy2 object and a oneshot sender channel when passing into the

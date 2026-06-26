@@ -15,6 +15,7 @@ where
     Multi(curl::MultiError),
     TokioRecv(RecvError),
     TokioSend(SendError<actor::Request<H>>),
+    JoinError(tokio::task::JoinError),
 }
 
 /// This convert RecvError to our customized
@@ -63,6 +64,7 @@ where
             Error::Multi(err) => write!(f, "{}", err),
             Error::TokioRecv(err) => write!(f, "{}", err),
             Error::TokioSend(err) => write!(f, "{}", err),
+            Error::JoinError(err) => write!(f, "{}", err),
         }
     }
 }
