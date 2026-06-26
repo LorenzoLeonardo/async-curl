@@ -153,9 +153,10 @@ async fn test_concurrency_abort() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
-    let curl = CurlActor::new();
+    let main_curl = CurlActor::new();
 
     let check_cancelled1 = check_cancelled.clone();
+    let curl = main_curl.clone();
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
@@ -229,9 +230,10 @@ async fn test_concurrency_abort_multi_threaded_runtime() {
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let curl = CurlActor::new_runtime(runtime);
+    let main_curl = CurlActor::new_runtime(runtime);
 
     let check_cancelled1 = check_cancelled.clone();
+    let curl = main_curl.clone();
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
