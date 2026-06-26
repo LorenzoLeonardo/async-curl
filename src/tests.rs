@@ -55,6 +55,7 @@ fn setup_test_logger() {
         env_logger::Env::default().default_filter_or("your_crate_name=trace"),
     )
     .filter_level(LevelFilter::Trace)
+    .format_timestamp_nanos()
     .init();
 }
 
@@ -159,21 +160,25 @@ async fn test_concurrency_abort() {
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
-        log::trace!("HTTP task . . . .");
+        log::trace!("[current_thread] HTTP task . . . .");
         let _ = curl.send_request(easy2).await.unwrap();
         let mut lock = check_cancelled1.lock().await;
         *lock = false;
+        log::trace!("[current_thread] HTTP task completed");
     });
 
     let other_task = tokio::spawn(async move {
         for _n in 0..10 {
-            log::trace!("Other task . . . .");
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            log::trace!("[current_thread] Other task . . . .");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            log::trace!("[current_thread] Other task completed");
         }
     });
 
     let abort_task = tokio::spawn(async move {
+        log::trace!("[current_thread] Aborting HTTP task . . . .");
         http_task.abort();
+        log::trace!("[current_thread] HTTP task aborted");
     });
 
     let (other_task, abort_task) = tokio::join!(other_task, abort_task);
@@ -231,21 +236,25 @@ async fn test_concurrency_abort_multi_threaded_runtime() {
         let mut easy2 = Easy2::new(ResponseHandler::new());
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
-        log::trace!("HTTP task . . . .");
+        log::trace!("[multi_threaded] HTTP task . . . .");
         let _ = curl.send_request(easy2).await.unwrap();
         let mut lock = check_cancelled1.lock().await;
         *lock = false;
+        log::trace!("[multi_threaded] HTTP task completed");
     });
 
     let other_task = tokio::spawn(async move {
         for _n in 0..10 {
-            log::trace!("Other task . . . .");
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            log::trace!("[multi_threaded] Other task . . . .");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            log::trace!("[multi_threaded] Other task completed");
         }
     });
 
     let abort_task = tokio::spawn(async move {
+        log::trace!("[multi_threaded] Aborting HTTP task . . . .");
         http_task.abort();
+        log::trace!("[multi_threaded] HTTP task aborted");
     });
 
     let (other_task, abort_task) = tokio::join!(other_task, abort_task);
