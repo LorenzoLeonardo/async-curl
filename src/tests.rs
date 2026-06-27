@@ -528,3 +528,175 @@ async fn test_async_concurrency_should_not_block_multi_thread_using_easy2() {
 
     http_task.await.unwrap();
 }
+
+#[tokio::test]
+async fn test_async_requests_using_easy2_perform() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    const MOCK_STATUS_CODE: StatusCode = StatusCode::OK;
+
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+
+    let curl = CurlActor::new();
+    let mut easy2 = Easy2::new(ResponseHandler::new());
+    easy2.url(url.as_str()).unwrap();
+    easy2.get(true).unwrap();
+
+    let curl1 = curl.clone();
+    let spawn1 = tokio::spawn(async move {
+        let result = curl1.perform_easy2(easy2).await;
+        let mut result = result.unwrap();
+        // Test response body
+        assert_eq!(
+            String::from_utf8_lossy(&result.get_mut().take().unwrap()),
+            MOCK_BODY_RESPONSE.to_string()
+        );
+
+        // Test response status code
+        let status_code = result.response_code().unwrap() as u16;
+
+        assert_eq!(status_code, MOCK_STATUS_CODE.as_u16());
+    });
+
+    let mut easy2 = Easy2::new(ResponseHandler::new());
+    easy2.url(url.as_str()).unwrap();
+    easy2.get(true).unwrap();
+
+    let spawn2 = tokio::spawn(async move {
+        let result = curl.perform_easy2(easy2).await;
+        let mut result = result.unwrap();
+        // Test response body
+        assert_eq!(
+            String::from_utf8_lossy(&result.get_mut().take().unwrap()),
+            MOCK_BODY_RESPONSE.to_string()
+        );
+
+        // Test response status code
+        let status_code = result.response_code().unwrap() as u16;
+        assert_eq!(status_code, MOCK_STATUS_CODE.as_u16());
+    });
+
+    let (r1, r2) = tokio::join!(spawn1, spawn2);
+
+    for result in [r1, r2] {
+        if let Err(err) = result {
+            if err.is_panic() {
+                std::panic::resume_unwind(err.into_panic());
+            } else {
+                panic!("task was cancelled: {err}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_error_perform_easy2() {
+    let url = "https://no-connection";
+
+    let curl = CurlActor::new();
+
+    let mut easy2 = Easy2::new(ResponseHandler::new());
+    easy2.url(url).unwrap();
+    easy2.get(true).unwrap();
+
+    let result = curl.perform_easy2(easy2).await;
+    let _ = result.unwrap_err();
+}
+
+#[tokio::test]
+async fn test_concurrency_abort_using_perform_easy2() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+    let check_cancelled = Arc::new(Mutex::new(true));
+    let main_curl = CurlActor::new();
+
+    let check_cancelled1 = check_cancelled.clone();
+    let curl = main_curl.clone();
+    let http_task = tokio::spawn(async move {
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(url.as_str()).unwrap();
+        easy2.get(true).unwrap();
+        log::trace!("[current_thread] HTTP task . . . .");
+        let _ = curl.perform_easy2(easy2).await.unwrap();
+        let mut lock = check_cancelled1.lock().await;
+        *lock = false;
+        log::trace!("[current_thread] HTTP task completed");
+    });
+
+    let other_task = tokio::spawn(async move {
+        for _n in 0..10 {
+            log::trace!("[current_thread] Other task . . . .");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            log::trace!("[current_thread] Other task completed");
+        }
+    });
+
+    let abort_task = tokio::spawn(async move {
+        log::trace!("[current_thread] Aborting HTTP task . . . .");
+        http_task.abort();
+        log::trace!("[current_thread] HTTP task aborted");
+    });
+
+    let (other_task, abort_task) = tokio::join!(other_task, abort_task);
+    other_task.unwrap();
+    abort_task.unwrap();
+    assert!(*check_cancelled.lock().await);
+}
+
+#[tokio::test]
+async fn test_concurrency_abort_multi_threaded_runtime_using_perform_easy2() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+    let check_cancelled = Arc::new(Mutex::new(true));
+    let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let main_curl = CurlActor::new_runtime(runtime);
+
+    let check_cancelled1 = check_cancelled.clone();
+    let curl = main_curl.clone();
+    let http_task = tokio::spawn(async move {
+        let mut easy2 = Easy2::new(ResponseHandler::new());
+        easy2.url(url.as_str()).unwrap();
+        easy2.get(true).unwrap();
+        log::trace!("[multi_threaded] HTTP task . . . .");
+        let _ = curl.perform_easy2(easy2).await.unwrap();
+        let mut lock = check_cancelled1.lock().await;
+        *lock = false;
+        log::trace!("[multi_threaded] HTTP task completed");
+    });
+
+    let other_task = tokio::spawn(async move {
+        for _n in 0..10 {
+            log::trace!("[multi_threaded] Other task . . . .");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            log::trace!("[multi_threaded] Other task completed");
+        }
+    });
+
+    let abort_task = tokio::spawn(async move {
+        log::trace!("[multi_threaded] Aborting HTTP task . . . .");
+        http_task.abort();
+        log::trace!("[multi_threaded] HTTP task aborted");
+    });
+
+    let (other_task, abort_task) = tokio::join!(other_task, abort_task);
+    other_task.unwrap();
+    abort_task.unwrap();
+    assert!(*check_cancelled.lock().await);
+}
