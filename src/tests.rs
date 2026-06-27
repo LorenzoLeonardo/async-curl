@@ -127,7 +127,17 @@ async fn test_async_requests() {
         assert_eq!(status_code, MOCK_STATUS_CODE.as_u16());
     });
 
-    let (_, _) = tokio::join!(spawn1, spawn2);
+    let (r1, r2) = tokio::join!(spawn1, spawn2);
+
+    for result in [r1, r2] {
+        if let Err(err) = result {
+            if err.is_panic() {
+                std::panic::resume_unwind(err.into_panic());
+            } else {
+                panic!("task was cancelled: {err}");
+            }
+        }
+    }
 }
 
 #[tokio::test]
