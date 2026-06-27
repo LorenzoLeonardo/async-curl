@@ -78,6 +78,7 @@ dependencies = [
  "async-trait",
  "ctor",
  "curl",
+ "curl-sys",
  "env_logger",
  "http",
  "log",
