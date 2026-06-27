@@ -85,4 +85,5 @@ pub use error::*;
 
 pub mod dep {
     pub use curl;
+    pub use curl_sys;
 }
