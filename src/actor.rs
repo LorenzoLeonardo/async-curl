@@ -18,6 +18,7 @@ where
     H: Handler + Debug + Send + 'static,
 {
     async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>;
+    async fn perform_easy2(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>;
 }
 
 /// CurlActor is responsible for performing
@@ -153,6 +154,22 @@ where
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+/// This contains the Easy2 object and a oneshot sender channel when passing into the
+/// background task to perform Curl asynchronously.
+#[derive(Debug)]
+pub struct Request<H: Handler + Debug + Send + 'static>(
+    Easy2<H>,
+    oneshot::Sender<Result<Easy2<H>, Error<H>>>,
+    TransferType,
+);
+
+/// This enum is used to differentiate between the two types of transfers: Multi and Easy2.
+#[derive(Debug)]
+pub enum TransferType {
+    Multi,
+    Easy2,
+}
+
 struct Inner<H>
 where
     H: Handler + Debug + Send + 'static,
@@ -205,14 +222,28 @@ where
 {
     /// This will send Easy2 into the background task that will perform
     /// curl asynchronously, await the response in the oneshot receiver and
-    /// return Easy2 back to the caller.
+    /// return Easy2 back to the caller. This uses the curl multi interface to perform the request.
     async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
         let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
         self.inner
             .request_sender
             .as_ref()
             .expect("request_sender missing")
-            .send(Request(easy2, oneshot_sender))
+            .send(Request(easy2, oneshot_sender, TransferType::Multi))
+            .await?;
+        oneshot_receiver.await?
+    }
+
+    /// This will send Easy2 into the background task that will perform
+    /// curl asynchronously, await the response in the oneshot receiver and
+    /// return Easy2 back to the caller. This uses the curl easy2 interface to perform the request.
+    async fn perform_easy2(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
+        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
+        self.inner
+            .request_sender
+            .as_ref()
+            .expect("request_sender missing")
+            .send(Request(easy2, oneshot_sender, TransferType::Easy2))
             .await?;
         oneshot_receiver.await?
     }
@@ -272,9 +303,14 @@ where
         std::thread::spawn(move || {
             let local = LocalSet::new();
             local.spawn_local(async move {
-                while let Some(Request(easy2, oneshot_sender)) = request_receiver.recv().await {
+                while let Some(Request(easy2, oneshot_sender, transfer_type)) =
+                    request_receiver.recv().await
+                {
                     tokio::task::spawn_local(async move {
-                        let response = perform_curl_multi(easy2).await;
+                        let response = match transfer_type {
+                            TransferType::Easy2 => perform_curl_easy2(easy2).await,
+                            TransferType::Multi => perform_curl_multi(easy2).await,
+                        };
                         if let Err(res) = oneshot_sender.send(response) {
                             trace!("Warning! The receiver has been dropped. {:?}", res);
                         }
@@ -289,6 +325,7 @@ where
 async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
     easy2: Easy2<H>,
 ) -> Result<Easy2<H>, Error<H>> {
+    trace!("perform_curl_multi: starting curl multi operation");
     tokio::task::spawn_blocking(move || -> Result<Easy2<H>, Error<H>> {
         let multi = Multi::new();
         let handle = multi.add2(easy2).map_err(|e| Error::Multi(e))?;
@@ -350,10 +387,14 @@ async fn perform_curl_multi<H: Handler + Debug + Send + 'static>(
     .map_err(Error::JoinError)?
 }
 
-/// This contains the Easy2 object and a oneshot sender channel when passing into the
-/// background task to perform Curl asynchronously.
-#[derive(Debug)]
-pub struct Request<H: Handler + Debug + Send + 'static>(
-    Easy2<H>,
-    oneshot::Sender<Result<Easy2<H>, Error<H>>>,
-);
+async fn perform_curl_easy2<H: Handler + Debug + Send + 'static>(
+    easy2: Easy2<H>,
+) -> Result<Easy2<H>, Error<H>> {
+    trace!("perform_curl_easy2: starting curl easy2 operation");
+    tokio::task::spawn_blocking(move || -> Result<Easy2<H>, Error<H>> {
+        easy2.perform().map_err(|e| Error::Curl(e))?;
+        Ok(easy2)
+    })
+    .await
+    .map_err(Error::JoinError)?
+}
