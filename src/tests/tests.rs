@@ -88,7 +88,7 @@ async fn test_async_requests() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
 
-    let curl = CurlActor::new();
+    let curl = CurlActor::new().transfer_type_multi();
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url(url.as_str()).unwrap();
     easy2.get(true).unwrap();
@@ -144,7 +144,7 @@ async fn test_async_requests() {
 async fn test_error() {
     let url = "https://no-connection";
 
-    let curl = CurlActor::new();
+    let curl = CurlActor::new().transfer_type_multi();
 
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url(url).unwrap();
@@ -165,7 +165,7 @@ async fn test_concurrency_abort() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
-    let main_curl = CurlActor::new();
+    let main_curl = CurlActor::new().transfer_type_multi();
 
     let check_cancelled1 = check_cancelled.clone();
     let curl = main_curl.clone();
@@ -231,6 +231,36 @@ async fn test_curl_builder() {
 }
 
 #[tokio::test]
+async fn test_curl_builder_using_multi() {
+    const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
+    let server = start_mock_server(
+        "/async-test",
+        MOCK_BODY_RESPONSE.to_string(),
+        StatusCode::OK,
+    )
+    .await;
+    let url = format!("{}{}", server.uri(), "/async-test");
+
+    let actor = CurlActor::new();
+    let collector = ResponseHandler::new();
+
+    let mut curl = AsyncCurl::new(actor, collector)
+        .url(url.as_str())
+        .unwrap()
+        .finalize_use_multi_transfer()
+        .perform()
+        .await
+        .unwrap();
+
+    log::trace!("{:?}", curl);
+    let body = curl.get_mut().take();
+    let status = curl.response_code().unwrap() as u16;
+
+    assert_eq!(body, Some(MOCK_BODY_RESPONSE.as_bytes().to_vec()));
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_concurrency_abort_multi_threaded_runtime() {
     const MOCK_BODY_RESPONSE: &str = r#"{"token":"12345"}"#;
     let server = start_mock_server(
@@ -242,7 +272,7 @@ async fn test_concurrency_abort_multi_threaded_runtime() {
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime);
+    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
 
     let check_cancelled1 = check_cancelled.clone();
     let curl = main_curl.clone();
@@ -341,7 +371,7 @@ async fn test_async_concurrency_should_not_block() {
 
     let url = format!("{}{}", server.uri(), "/async-test");
 
-    let curl = CurlActor::new();
+    let curl = CurlActor::new().transfer_type_multi();
 
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());
@@ -392,7 +422,7 @@ async fn test_async_concurrency_should_not_block_multi_thread() {
 
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let curl = CurlActor::new_runtime(runtime);
+    let curl = CurlActor::new_runtime(runtime).transfer_type_multi();
 
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());
@@ -450,7 +480,7 @@ async fn test_async_concurrency_should_not_block_using_easy2() {
         easy2.url(&url).unwrap();
         easy2.get(true).unwrap();
 
-        curl.perform_easy2(easy2).await.unwrap();
+        curl.send_request(easy2).await.unwrap();
     });
 
     let progress = Arc::new(AtomicUsize::new(0));
@@ -501,7 +531,7 @@ async fn test_async_concurrency_should_not_block_multi_thread_using_easy2() {
         easy2.url(&url).unwrap();
         easy2.get(true).unwrap();
 
-        curl.perform_easy2(easy2).await.unwrap();
+        curl.send_request(easy2).await.unwrap();
     });
 
     let progress = Arc::new(AtomicUsize::new(0));
@@ -549,7 +579,7 @@ async fn test_async_requests_using_easy2_perform() {
 
     let curl1 = curl.clone();
     let spawn1 = tokio::spawn(async move {
-        let result = curl1.perform_easy2(easy2).await;
+        let result = curl1.send_request(easy2).await;
         let mut result = result.unwrap();
         // Test response body
         assert_eq!(
@@ -568,7 +598,7 @@ async fn test_async_requests_using_easy2_perform() {
     easy2.get(true).unwrap();
 
     let spawn2 = tokio::spawn(async move {
-        let result = curl.perform_easy2(easy2).await;
+        let result = curl.send_request(easy2).await;
         let mut result = result.unwrap();
         // Test response body
         assert_eq!(
@@ -604,7 +634,7 @@ async fn test_error_perform_easy2() {
     easy2.url(url).unwrap();
     easy2.get(true).unwrap();
 
-    let result = curl.perform_easy2(easy2).await;
+    let result = curl.send_request(easy2).await;
     let _ = result.unwrap_err();
 }
 
@@ -628,7 +658,7 @@ async fn test_concurrency_abort_using_perform_easy2() {
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
         log::trace!("[current_thread] HTTP task . . . .");
-        let _ = curl.perform_easy2(easy2).await.unwrap();
+        let _ = curl.send_request(easy2).await.unwrap();
         let mut lock = check_cancelled1.lock().await;
         *lock = false;
         log::trace!("[current_thread] HTTP task completed");
@@ -675,7 +705,7 @@ async fn test_concurrency_abort_multi_threaded_runtime_using_perform_easy2() {
         easy2.url(url.as_str()).unwrap();
         easy2.get(true).unwrap();
         log::trace!("[multi_threaded] HTTP task . . . .");
-        let _ = curl.perform_easy2(easy2).await.unwrap();
+        let _ = curl.send_request(easy2).await.unwrap();
         let mut lock = check_cancelled1.lock().await;
         *lock = false;
         log::trace!("[multi_threaded] HTTP task completed");

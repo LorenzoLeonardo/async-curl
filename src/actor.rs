@@ -18,7 +18,6 @@ where
     H: Handler + Debug + Send + 'static,
 {
     async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>;
-    async fn perform_easy2(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>>;
 }
 
 /// CurlActor is responsible for performing
@@ -164,8 +163,8 @@ pub struct Request<H: Handler + Debug + Send + 'static>(
 );
 
 /// This enum is used to differentiate between the two types of transfers: Multi and Easy2.
-#[derive(Debug)]
-pub enum TransferType {
+#[derive(Debug, Clone)]
+enum TransferType {
     Multi,
     Easy2,
 }
@@ -204,6 +203,7 @@ where
     H: Handler + Debug + Send + 'static,
 {
     inner: Arc<Inner<H>>,
+    transfer_type: TransferType,
 }
 
 impl<H> Default for CurlActor<H>
@@ -222,28 +222,14 @@ where
 {
     /// This will send Easy2 into the background task that will perform
     /// curl asynchronously, await the response in the oneshot receiver and
-    /// return Easy2 back to the caller. This uses the curl multi interface to perform the request.
+    /// return Easy2 back to the caller.
     async fn send_request(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
         let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
         self.inner
             .request_sender
             .as_ref()
             .expect("request_sender missing")
-            .send(Request(easy2, oneshot_sender, TransferType::Multi))
-            .await?;
-        oneshot_receiver.await?
-    }
-
-    /// This will send Easy2 into the background task that will perform
-    /// curl asynchronously, await the response in the oneshot receiver and
-    /// return Easy2 back to the caller. This uses the curl easy2 interface to perform the request.
-    async fn perform_easy2(&self, easy2: Easy2<H>) -> Result<Easy2<H>, Error<H>> {
-        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<Result<Easy2<H>, Error<H>>>();
-        self.inner
-            .request_sender
-            .as_ref()
-            .expect("request_sender missing")
-            .send(Request(easy2, oneshot_sender, TransferType::Easy2))
+            .send(Request(easy2, oneshot_sender, self.transfer_type.clone()))
             .await?;
         oneshot_receiver.await?
     }
@@ -266,6 +252,7 @@ where
                 request_sender: Some(request_sender),
                 join_handle: Some(handle),
             }),
+            transfer_type: TransferType::Easy2,
         }
     }
 
@@ -282,6 +269,7 @@ where
                 request_sender: Some(request_sender),
                 join_handle: Some(handle),
             }),
+            transfer_type: TransferType::Easy2,
         }
     }
 
@@ -296,6 +284,7 @@ where
                 request_sender: Some(request_sender),
                 join_handle: Some(handle),
             }),
+            transfer_type: TransferType::Easy2,
         }
     }
 
@@ -319,6 +308,14 @@ where
             });
             runtime.block_on(local);
         })
+    }
+
+    /// This method allows the user to switch the transfer type to Multi for the CurlActor.
+    pub fn transfer_type_multi(self) -> Self {
+        Self {
+            inner: self.inner,
+            transfer_type: TransferType::Multi,
+        }
     }
 }
 

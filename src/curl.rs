@@ -2484,6 +2484,15 @@ where
             _state: Perform,
         }
     }
+
+    /// Finalizes your build to proceed in performing CURL operation but swtiches to multi transfer mode.
+    pub fn finalize_use_multi_transfer(self) -> AsyncCurl<C, Perform> {
+        AsyncCurl::<C, Perform> {
+            curl: self.curl.transfer_type_multi(),
+            easy: self.easy,
+            _state: Perform,
+        }
+    }
 }
 
 impl<C> AsyncCurl<C, Perform>

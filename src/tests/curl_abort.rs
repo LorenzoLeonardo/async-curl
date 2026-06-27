@@ -79,7 +79,7 @@ async fn test_transfer_abort_current_thread_curl_multi_perform() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime);
+    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
     let curl = main_curl.clone();
     let cancel = Arc::new(AtomicBool::new(false));
     let http_cancel = cancel.clone();
@@ -148,7 +148,7 @@ async fn test_transfer_abort_multi_thread_curl_multi_perform() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime);
+    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
     let curl = main_curl.clone();
     let cancel = Arc::new(AtomicBool::new(false));
     let http_cancel = cancel.clone();
@@ -225,7 +225,7 @@ async fn test_transfer_abort_current_thread_curl_easy2_perform() {
         easy2.get(true).unwrap();
         easy2.progress(true).unwrap();
         log::trace!("[test_transfer_abort_current_thread_curl_easy2_perform] HTTP task . . . .");
-        let result = curl.perform_easy2(easy2).await;
+        let result = curl.send_request(easy2).await;
 
         println!(
             "[test_transfer_abort_current_thread_curl_easy2_perform] HTTP task result: {:?}",
@@ -294,7 +294,7 @@ async fn test_transfer_abort_multi_thread_curl_easy2_perform() {
         easy2.get(true).unwrap();
         easy2.progress(true).unwrap();
         log::trace!("[test_transfer_abort_multi_thread_curl_easy2_perform] HTTP task . . . .");
-        let result = curl.perform_easy2(easy2).await;
+        let result = curl.send_request(easy2).await;
 
         println!(
             "[test_transfer_abort_multi_thread_curl_easy2_perform] HTTP task result: {:?}",
