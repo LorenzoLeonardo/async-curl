@@ -79,7 +79,7 @@ async fn test_transfer_abort_current_thread_curl_multi_perform() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
+    let main_curl = CurlActor::new_runtime(runtime).use_multi_transfer();
     let curl = main_curl.clone();
     let cancel = Arc::new(AtomicBool::new(false));
     let http_cancel = cancel.clone();
@@ -148,7 +148,7 @@ async fn test_transfer_abort_multi_thread_curl_multi_perform() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
+    let main_curl = CurlActor::new_runtime(runtime).use_multi_transfer();
     let curl = main_curl.clone();
     let cancel = Arc::new(AtomicBool::new(false));
     let http_cancel = cancel.clone();

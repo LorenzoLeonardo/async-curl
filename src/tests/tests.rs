@@ -88,7 +88,7 @@ async fn test_async_requests() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
 
-    let curl = CurlActor::new().transfer_type_multi();
+    let curl = CurlActor::new().use_multi_transfer();
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url(url.as_str()).unwrap();
     easy2.get(true).unwrap();
@@ -144,7 +144,7 @@ async fn test_async_requests() {
 async fn test_error() {
     let url = "https://no-connection";
 
-    let curl = CurlActor::new().transfer_type_multi();
+    let curl = CurlActor::new().use_multi_transfer();
 
     let mut easy2 = Easy2::new(ResponseHandler::new());
     easy2.url(url).unwrap();
@@ -165,7 +165,7 @@ async fn test_concurrency_abort() {
     .await;
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
-    let main_curl = CurlActor::new().transfer_type_multi();
+    let main_curl = CurlActor::new().use_multi_transfer();
 
     let check_cancelled1 = check_cancelled.clone();
     let curl = main_curl.clone();
@@ -247,7 +247,8 @@ async fn test_curl_builder_using_multi() {
     let mut curl = AsyncCurl::new(actor, collector)
         .url(url.as_str())
         .unwrap()
-        .finalize_use_multi_transfer()
+        .finalize()
+        .use_multi_transfer()
         .perform()
         .await
         .unwrap();
@@ -272,7 +273,7 @@ async fn test_concurrency_abort_multi_threaded_runtime() {
     let url = format!("{}{}", server.uri(), "/async-test");
     let check_cancelled = Arc::new(Mutex::new(true));
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let main_curl = CurlActor::new_runtime(runtime).transfer_type_multi();
+    let main_curl = CurlActor::new_runtime(runtime).use_multi_transfer();
 
     let check_cancelled1 = check_cancelled.clone();
     let curl = main_curl.clone();
@@ -371,7 +372,7 @@ async fn test_async_concurrency_should_not_block() {
 
     let url = format!("{}{}", server.uri(), "/async-test");
 
-    let curl = CurlActor::new().transfer_type_multi();
+    let curl = CurlActor::new().use_multi_transfer();
 
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());
@@ -422,7 +423,7 @@ async fn test_async_concurrency_should_not_block_multi_thread() {
 
     let url = format!("{}{}", server.uri(), "/async-test");
     let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let curl = CurlActor::new_runtime(runtime).transfer_type_multi();
+    let curl = CurlActor::new_runtime(runtime).use_multi_transfer();
 
     let http_task = tokio::spawn(async move {
         let mut easy2 = Easy2::new(ResponseHandler::new());

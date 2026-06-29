@@ -310,11 +310,19 @@ where
         })
     }
 
-    /// This method allows the user to switch the transfer type to Multi for the CurlActor.
-    pub fn transfer_type_multi(self) -> Self {
+    /// This method allows the user to switch the transfer type to Curl Multi for the CurlActor.
+    pub fn use_multi_transfer(self) -> Self {
         Self {
             inner: self.inner,
             transfer_type: TransferType::Multi,
+        }
+    }
+
+    /// This method allows the user to switch the transfer type to Curl Easy2 for the CurlActor.
+    pub fn use_easy2_transfer(self) -> Self {
+        Self {
+            inner: self.inner,
+            transfer_type: TransferType::Easy2,
         }
     }
 }
