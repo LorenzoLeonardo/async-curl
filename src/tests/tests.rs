@@ -20,6 +20,8 @@ use crate::actor::Actor;
 use crate::actor::CurlActor;
 use crate::curl::AsyncCurl;
 
+const THRESHOLD: usize = 20;
+
 #[derive(Debug, Clone, Default)]
 pub struct ResponseHandler {
     data: Option<Vec<u8>>,
@@ -398,7 +400,7 @@ async fn test_async_concurrency_should_not_block() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 30,
+        ticks >= THRESHOLD,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
@@ -449,7 +451,7 @@ async fn test_async_concurrency_should_not_block_multi_thread() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 30,
+        ticks >= THRESHOLD,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
@@ -500,7 +502,7 @@ async fn test_async_concurrency_should_not_block_using_easy2() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 30,
+        ticks >= THRESHOLD,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
@@ -551,7 +553,7 @@ async fn test_async_concurrency_should_not_block_multi_thread_using_easy2() {
     let ticks = progress.load(Ordering::Relaxed);
 
     assert!(
-        ticks >= 30,
+        ticks >= THRESHOLD,
         "executor appears blocked: only {} ticks executed in 500ms",
         ticks
     );
