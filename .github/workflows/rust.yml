@@ -20,7 +20,7 @@ jobs:
         rust: [1.66.0, stable, beta, nightly]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
     - name: Check fmt
       run: cargo fmt --all -- --check
     - name: Doc tests
