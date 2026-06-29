@@ -2476,19 +2476,10 @@ where
         Ok(self)
     }
 
-    /// Finalizes your build to proceed in performing CURL operation.
+    /// Finalizes your build to proceed in performing CURL transfer operation.
     pub fn finalize(self) -> AsyncCurl<C, Perform> {
         AsyncCurl::<C, Perform> {
             curl: self.curl,
-            easy: self.easy,
-            _state: Perform,
-        }
-    }
-
-    /// Finalizes your build to proceed in performing CURL operation but swtiches to multi transfer mode.
-    pub fn finalize_use_multi_transfer(self) -> AsyncCurl<C, Perform> {
-        AsyncCurl::<C, Perform> {
-            curl: self.curl.transfer_type_multi(),
             easy: self.easy,
             _state: Perform,
         }
@@ -2504,5 +2495,15 @@ where
     /// want to decide how to transform the response yourself.
     pub async fn perform(self) -> Result<Easy2<C>, Error<C>> {
         self.curl.send_request(self.easy).await
+    }
+
+    /// This will change the transfer type to curl multi.
+    /// By default, the transfer type is curl easy if this method is not called.
+    pub fn use_multi_transfer(self) -> AsyncCurl<C, Perform> {
+        AsyncCurl::<C, Perform> {
+            curl: self.curl.use_multi_transfer(),
+            easy: self.easy,
+            _state: Perform,
+        }
     }
 }
