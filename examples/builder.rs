@@ -221,9 +221,26 @@ async fn upload_file(actor: CurlActor<ResponseHandler>) -> Result<(), Box<dyn st
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actor = CurlActor::new();
 
-    body_only(actor.clone()).await?;
-    download_file_only(actor.clone()).await?;
-    download_file_with_body(actor.clone()).await?;
-    upload_file(actor).await?;
+    let inner = actor.clone();
+    let h1 = tokio::spawn(async move {
+        let _ = body_only(inner).await;
+    });
+
+    let inner = actor.clone();
+    let h2 = tokio::spawn(async move {
+        let _ = download_file_only(inner).await;
+    });
+
+    let inner = actor.clone();
+    let h3 = tokio::spawn(async move {
+        let _ = download_file_with_body(inner).await;
+    });
+
+    let inner = actor.clone();
+    let h4 = tokio::spawn(async move {
+        let _ = upload_file(inner).await;
+    });
+
+    let _ = tokio::join!(h1, h2, h3, h4);
     Ok(())
 }
