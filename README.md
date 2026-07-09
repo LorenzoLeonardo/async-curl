@@ -328,12 +328,12 @@ async fn main() {
 
 ```rust
 use std::fs::{File, OpenOptions};
-use std::io::Write as _;
+use std::io::{Read, Write as _};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_curl::{
-    dep::curl::easy::{Handler, WriteError},
+    dep::curl::easy::{Handler, ReadError, WriteError},
     AsyncCurl, CurlActor,
 };
 use http::HeaderMap;
@@ -343,21 +343,32 @@ pub struct ResponseHandler {
     header: Option<HeaderMap>,
     body: Option<Vec<u8>>,
     status: Option<u16>,
-    output_file: Option<Arc<File>>,
+    output_file: Option<Arc<Mutex<File>>>,
+    input_file: Option<Arc<Mutex<File>>>,
 }
 
 impl Handler for ResponseHandler {
     /// This will store the response from the server
     /// to the data vector.
     fn write(&mut self, stream: &[u8]) -> Result<usize, WriteError> {
-        if let Some(file) = self.output_file.as_mut() {
-            let _ = file.write_all(stream);
+        if let Some(file) = self.output_file.as_ref() {
+            let mut guard = file.lock().map_err(|_| WriteError::Pause)?;
+            guard.write_all(stream).map_err(|_| WriteError::Pause)?;
         }
 
         if let Some(ref mut data) = self.body {
             data.extend_from_slice(stream);
         }
         Ok(stream.len())
+    }
+
+    fn read(&mut self, data: &mut [u8]) -> Result<usize, ReadError> {
+        if let Some(file) = self.input_file.as_ref() {
+            let mut guard = file.lock().map_err(|_| ReadError::Abort)?;
+            guard.read(data).map_err(|_| ReadError::Abort)
+        } else {
+            Ok(0)
+        }
     }
 
     fn header(&mut self, data: &[u8]) -> bool {
@@ -417,7 +428,14 @@ impl ResponseHandler {
             .write(true)
             .open(path)?;
 
-        self.output_file = Some(Arc::new(file));
+        self.output_file = Some(Arc::new(Mutex::new(file)));
+        Ok(self)
+    }
+
+    /// Create a handler that will read upload data from a local file.
+    pub fn with_input_file<P: AsRef<Path>>(mut self, path: P) -> Result<Self, std::io::Error> {
+        let file = File::open(path)?;
+        self.input_file = Some(Arc::new(Mutex::new(file)));
         Ok(self)
     }
 
@@ -427,8 +445,7 @@ impl ResponseHandler {
             .truncate(true)
             .write(true)
             .open(path)?;
-
-        self.output_file = Some(Arc::new(file));
+        self.output_file = Some(Arc::new(Mutex::new(file)));
         self.body = None;
         Ok(self)
     }
@@ -506,13 +523,37 @@ async fn body_only(actor: CurlActor<ResponseHandler>) -> Result<(), Box<dyn std:
     Ok(())
 }
 
+async fn upload_file(actor: CurlActor<ResponseHandler>) -> Result<(), Box<dyn std::error::Error>> {
+    let path_ref = "<file to be uploaded>";
+    let file_size = std::fs::metadata(path_ref)?.len();
+
+    let collector = ResponseHandler::new().with_input_file(path_ref)?;
+
+    let mut curl = AsyncCurl::new(actor, collector)
+        .url("<upload url>")?
+        .upload(true)?
+        .in_filesize(file_size)?
+        .finalize()
+        .perform()
+        .await?;
+
+    let response = curl.get_mut().take_response()?;
+
+    println!("Upload headers: {:?}", response.headers());
+    println!("Upload body: {:?}", response.body());
+    println!("Upload status: {}", response.status());
+
+    Ok(())
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actor = CurlActor::new();
 
     body_only(actor.clone()).await?;
     download_file_only(actor.clone()).await?;
-    download_file_with_body(actor).await?;
+    download_file_with_body(actor.clone()).await?;
+    upload_file(actor).await?;
     Ok(())
 }
 ```
